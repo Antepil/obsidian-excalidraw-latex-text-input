@@ -18,6 +18,8 @@ import {
   PluginSettingTab,
   Setting
 } from "obsidian";
+import { createLatexSnippetExtension } from "./latex-snippet-extension";
+import latexSuiteSnippets from "./latex-suite-snippets";
 
 interface ExcalidrawLatexTextSettings {
   defaultTextWidth: number;
@@ -278,6 +280,7 @@ class MixedLatexTextModal extends Modal {
               }
             }
           ]),
+          createLatexSnippetExtension(latexSuiteSnippets),
           latexSuiteMarkdownLanguage.extension,
           ...this.options.latexSuiteExtensions
         ]

@@ -25,10 +25,524 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_state = require("@codemirror/state");
-var import_view = require("@codemirror/view");
+var import_view2 = require("@codemirror/view");
 var import_language = require("@codemirror/language");
 var import_common = require("@lezer/common");
 var import_obsidian = require("obsidian");
+
+// src/latex-snippet-extension.ts
+var import_view = require("@codemirror/view");
+
+// src/latex-suite-snippets.ts
+var SNIPPET_VARIABLES = {
+  GREEK: [
+    "alpha",
+    "beta",
+    "gamma",
+    "Gamma",
+    "delta",
+    "Delta",
+    "epsilon",
+    "varepsilon",
+    "zeta",
+    "theta",
+    "Theta",
+    "vartheta",
+    "iota",
+    "kappa",
+    "lambda",
+    "Lambda",
+    "sigma",
+    "Sigma",
+    "upsilon",
+    "Upsilon",
+    "omega",
+    "Omega"
+  ].join("|"),
+  SYMBOL: [
+    "infty",
+    "sum",
+    "prod",
+    "lim",
+    "pm",
+    "mp",
+    "dots",
+    "nabla",
+    "times",
+    "cdot",
+    "parallel",
+    "equiv",
+    "neq",
+    "geq",
+    "leq",
+    "gg",
+    "ll",
+    "sim",
+    "simeq",
+    "propto",
+    "to",
+    "mapsto",
+    "implies",
+    "impliedby",
+    "cap",
+    "cup",
+    "in",
+    "notin",
+    "setminus",
+    "subseteq",
+    "supseteq",
+    "emptyset"
+  ].join("|"),
+  MORE_SYMBOLS: [
+    "mathcal\\{L\\}",
+    "mathcal\\{H\\}",
+    "mathbb\\{C\\}",
+    "mathbb\\{R\\}",
+    "mathbb\\{Z\\}",
+    "mathbb\\{N\\}"
+  ].join("|"),
+  ACCENT: "hat|bar|dot|ddot|tilde|underline|vec"
+};
+var latexSuiteSnippets = [
+  { trigger: "mk", replacement: "$$0$", options: "tA" },
+  { trigger: "dm", replacement: "$$\n	$0\n$$", options: "tAw" },
+  { trigger: /(?<=\S.*)dm/, replacement: "\n$$\n	$0\n$$", options: "tAw", priority: 1 },
+  { trigger: /([^\\])beg/, replacement: "[[0]]\\begin{$0}\n	$1\n\\end{$0}", options: "MA" },
+  { trigger: /([^\\])beg/, replacement: "[[0]]\\begin{$0} $1 \\end{$0}", options: "nA" },
+  { trigger: "@a", replacement: "\\alpha", options: "mA" },
+  { trigger: "@b", replacement: "\\beta", options: "mA" },
+  { trigger: "@g", replacement: "\\gamma", options: "mA" },
+  { trigger: "@G", replacement: "\\Gamma", options: "mA" },
+  { trigger: "@d", replacement: "\\delta", options: "mA" },
+  { trigger: "@D", replacement: "\\Delta", options: "mA" },
+  { trigger: "@e", replacement: "\\epsilon", options: "mA" },
+  { trigger: ":e", replacement: "\\varepsilon", options: "mA" },
+  { trigger: "@z", replacement: "\\zeta", options: "mA" },
+  { trigger: "@t", replacement: "\\theta", options: "mA" },
+  { trigger: "@T", replacement: "\\Theta", options: "mA" },
+  { trigger: ":t", replacement: "\\vartheta", options: "mA" },
+  { trigger: "@i", replacement: "\\iota", options: "mA" },
+  { trigger: "@k", replacement: "\\kappa", options: "mA" },
+  { trigger: "@l", replacement: "\\lambda", options: "mA" },
+  { trigger: "@L", replacement: "\\Lambda", options: "mA" },
+  { trigger: "@s", replacement: "\\sigma", options: "mA" },
+  { trigger: "@S", replacement: "\\Sigma", options: "mA" },
+  { trigger: "@u", replacement: "\\upsilon", options: "mA" },
+  { trigger: "@U", replacement: "\\Upsilon", options: "mA" },
+  { trigger: "@o", replacement: "\\omega", options: "mA" },
+  { trigger: "@O", replacement: "\\Omega", options: "mA" },
+  { trigger: "ome", replacement: "\\omega", options: "mA" },
+  { trigger: "Ome", replacement: "\\Omega", options: "mA" },
+  { trigger: "text", replacement: "\\text{$0}$1", options: "mA" },
+  { trigger: '"', replacement: "\\text{$0}$1", options: "mA" },
+  { trigger: "sr", replacement: "^{2}", options: "mA" },
+  { trigger: "cb", replacement: "^{3}", options: "mA" },
+  { trigger: "rd", replacement: "^{$0}$1", options: "mA" },
+  { trigger: "_", replacement: "_{$0}$1", options: "mA" },
+  { trigger: "sts", replacement: "_\\text{$0}", options: "mA" },
+  { trigger: "sq", replacement: "\\sqrt{ $0 }$1", options: "mA" },
+  { trigger: "//", replacement: "\\frac{$0}{$1}$2", options: "mA" },
+  { trigger: "ee", replacement: "e^{ $0 }$1", options: "mA" },
+  { trigger: "invs", replacement: "^{-1}", options: "mA" },
+  { trigger: /([^\\])(exp|log|ln)/, replacement: "[[0]]\\[[1]]", options: "rmA" },
+  { trigger: "conj", replacement: "^{*}", options: "mA" },
+  { trigger: "Re", replacement: "\\mathrm{Re}", options: "mA" },
+  { trigger: "Im", replacement: "\\mathrm{Im}", options: "mA" },
+  { trigger: "bf", replacement: "\\mathbf{$0}", options: "mA" },
+  { trigger: "rm", replacement: "\\mathrm{$0}$1", options: "mA" },
+  { trigger: /([^\\])(det)/, replacement: "[[0]]\\[[1]]", options: "rmA" },
+  { trigger: "trace", replacement: "\\mathrm{Tr}", options: "mA" },
+  { trigger: "([a-zA-Z])hat", replacement: "\\hat{[[0]]}", options: "rmA" },
+  { trigger: "([a-zA-Z])bar", replacement: "\\bar{[[0]]}", options: "rmA" },
+  { trigger: "([a-zA-Z])dot", replacement: "\\dot{[[0]]}", options: "rmA", priority: -1 },
+  { trigger: "([a-zA-Z])ddot", replacement: "\\ddot{[[0]]}", options: "rmA", priority: 1 },
+  { trigger: "([a-zA-Z])tilde", replacement: "\\tilde{[[0]]}", options: "rmA" },
+  { trigger: "([a-zA-Z])und", replacement: "\\underline{[[0]]}", options: "rmA" },
+  { trigger: "([a-zA-Z])vec", replacement: "\\vec{[[0]]}", options: "rmA" },
+  { trigger: "([a-zA-Z]),\\.", replacement: "\\mathbf{[[0]]}", options: "rmA" },
+  { trigger: "([a-zA-Z])\\.,", replacement: "\\mathbf{[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}),\\.", replacement: "\\boldsymbol{\\[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK})\\.,", replacement: "\\boldsymbol{\\[[0]]}", options: "rmA" },
+  { trigger: "hat", replacement: "\\hat{$0}$1", options: "mA" },
+  { trigger: "bar", replacement: "\\bar{$0}$1", options: "mA" },
+  { trigger: "dot", replacement: "\\dot{$0}$1", options: "mA", priority: -1 },
+  { trigger: "ddot", replacement: "\\ddot{$0}$1", options: "mA" },
+  { trigger: "cdot", replacement: "\\cdot", options: "mA" },
+  { trigger: "tilde", replacement: "\\tilde{$0}$1", options: "mA" },
+  { trigger: "und", replacement: "\\underline{$0}$1", options: "mA" },
+  { trigger: "vec", replacement: "\\vec{$0}$1", options: "mA" },
+  { trigger: "pmod", replacement: "\\pmod{${0:n}}$1", options: "mA" },
+  { trigger: "(\\\\${GREEK}|[A-Za-z])(\\d)", replacement: "[[0]]_{[[1]]}", options: "rmA", priority: -1 },
+  { trigger: "(\\\\${GREEK}|[A-Za-z])_{(\\d+)}(\\d)", replacement: "[[0]]_{[[1]][[2]]}", options: "rmA", priority: -1 },
+  { trigger: "\\\\(${ACCENT})\\{(\\\\${GREEK}|[A-Za-z])\\}(\\d)", replacement: "\\[[0]]{[[1]]}_{[[2]]}", options: "rmA", priority: -1 },
+  { trigger: "\\\\(${ACCENT})\\{(\\\\${GREEK}|[A-Za-z])\\}_\\{(\\d+)\\}(\\d)", replacement: "\\[[0]]{[[1]]}_{[[2]][[3]]}", options: "rmA", priority: -1 },
+  { trigger: "\\\\(${ACCENT})\\{\\\\(${ACCENT})\\{(\\\\${GREEK}|[A-Za-z])\\}\\}(\\d)", replacement: "\\[[0]]{\\[[1]]{[[2]]}}_{[[3]]}", options: "rmA", priority: -1 },
+  { trigger: "\\\\(${ACCENT})\\{\\\\(${ACCENT})\\{(\\\\${GREEK}|[A-Za-z])\\}\\}_\\{(\\d+)\\}(\\d)", replacement: "\\[[0]]{\\[[1]]{[[2]]}}_{[[3]][[4]]}", options: "rmA", priority: -1 },
+  { trigger: "xnn", replacement: "x_{n}", options: "mA" },
+  { trigger: "\\xii", replacement: "x_{i}", options: "mA", priority: 1 },
+  { trigger: "xjj", replacement: "x_{j}", options: "mA" },
+  { trigger: "xp1", replacement: "x_{n+1}", options: "mA" },
+  { trigger: "ynn", replacement: "y_{n}", options: "mA" },
+  { trigger: "yii", replacement: "y_{i}", options: "mA" },
+  { trigger: "yjj", replacement: "y_{j}", options: "mA" },
+  { trigger: "ooo", replacement: "\\infty", options: "mA" },
+  { trigger: "sum", replacement: "\\sum", options: "mA" },
+  { trigger: "prod", replacement: "\\prod", options: "mA" },
+  { trigger: "\\sum", replacement: "\\sum_{${0:i}=${1:1}}^{${2:N}} $3", options: "m" },
+  { trigger: "\\prod", replacement: "\\prod_{${0:i}=${1:1}}^{${2:N}} $3", options: "m" },
+  { trigger: "lim", replacement: "\\lim_{ ${0:n} \\to ${1:\\infty} } $2", options: "mA" },
+  { trigger: "+-", replacement: "\\pm", options: "mA" },
+  { trigger: "-+", replacement: "\\mp", options: "mA" },
+  { trigger: "...", replacement: "\\dots", options: "mA" },
+  { trigger: "nabl", replacement: "\\nabla", options: "mA" },
+  { trigger: "xx", replacement: "\\times", options: "mA" },
+  { trigger: "**", replacement: "\\cdot", options: "mA" },
+  { trigger: "para", replacement: "\\parallel", options: "mA" },
+  { trigger: "===", replacement: "\\equiv", options: "mA" },
+  { trigger: "!=", replacement: "\\neq", options: "mA" },
+  { trigger: ">=", replacement: "\\geq", options: "mA" },
+  { trigger: "<=", replacement: "\\leq", options: "mA" },
+  { trigger: ">>", replacement: "\\gg", options: "mA" },
+  { trigger: "<<", replacement: "\\ll", options: "mA" },
+  { trigger: "simm", replacement: "\\sim", options: "mA" },
+  { trigger: "sim=", replacement: "\\simeq", options: "mA" },
+  { trigger: "prop", replacement: "\\propto", options: "mA" },
+  { trigger: "<->", replacement: "\\leftrightarrow ", options: "mA" },
+  { trigger: "->", replacement: "\\to", options: "mA" },
+  { trigger: "!>", replacement: "\\mapsto", options: "mA" },
+  { trigger: "=>", replacement: "\\implies", options: "mA" },
+  { trigger: "=<", replacement: "\\impliedby", options: "mA" },
+  { trigger: "and", replacement: "\\cap", options: "mA" },
+  { trigger: "orr", replacement: "\\cup", options: "mA" },
+  { trigger: "inn", replacement: "\\in", options: "mA" },
+  { trigger: "notin", replacement: "\\not\\in", options: "mA" },
+  { trigger: "\\\\\\", replacement: "\\setminus", options: "mA" },
+  { trigger: "sub=", replacement: "\\subseteq", options: "mA" },
+  { trigger: "sup=", replacement: "\\supseteq", options: "mA" },
+  { trigger: "eset", replacement: "\\emptyset", options: "mA" },
+  { trigger: "set", replacement: "\\{ $0 \\}$1", options: "mA" },
+  { trigger: "e\\xi sts", replacement: "\\exists", options: "mA", priority: 1 },
+  { trigger: "LL", replacement: "\\mathcal{L}", options: "mA" },
+  { trigger: "HH", replacement: "\\mathcal{H}", options: "mA" },
+  { trigger: "CC", replacement: "\\mathbb{C}", options: "mA" },
+  { trigger: "RR", replacement: "\\mathbb{R}", options: "mA" },
+  { trigger: "ZZ", replacement: "\\mathbb{Z}", options: "mA" },
+  { trigger: "NN", replacement: "\\mathbb{N}", options: "mA" },
+  { trigger: "([^\\\\])(${GREEK})", replacement: "[[0]]\\[[1]]", options: "rmA" },
+  { trigger: "([^\\\\])(${SYMBOL})", replacement: "[[0]]\\[[1]]", options: "rmA" },
+  { trigger: "\\\\(${GREEK}|${SYMBOL}|${MORE_SYMBOLS})([A-Za-z])", replacement: "\\[[0]] [[1]]", options: "rmA" },
+  { trigger: "\\\\(${GREEK}|${SYMBOL}) sr", replacement: "\\[[0]]^{2}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}|${SYMBOL}) cb", replacement: "\\[[0]]^{3}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}|${SYMBOL}) rd", replacement: "\\[[0]]^{$0}$1", options: "rmA" },
+  { trigger: "\\\\(${GREEK}) hat", replacement: "\\hat{\\[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}) dot", replacement: "\\dot{\\[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}) bar", replacement: "\\bar{\\[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}) vec", replacement: "\\vec{\\[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}) tilde", replacement: "\\tilde{\\[[0]]}", options: "rmA" },
+  { trigger: "\\\\(${GREEK}) und", replacement: "\\underline{\\[[0]]}", options: "rmA" },
+  { trigger: "par", replacement: "\\frac{ \\partial ${0:y} }{ \\partial ${1:x} } $2", options: "m" },
+  { trigger: /pa([A-Za-z])([A-Za-z])/, replacement: "\\frac{ \\partial [[0]] }{ \\partial [[1]] } ", options: "rm" },
+  { trigger: "ddt", replacement: "\\frac{d}{dt} ", options: "mA" },
+  { trigger: /([^\\])int/, replacement: "[[0]]\\int", options: "mA", priority: -1 },
+  { trigger: "\\int", replacement: "\\int $0 \\, d${1:x} $2", options: "m" },
+  { trigger: "dint", replacement: "\\int_{${0:0}}^{${1:1}} $2 \\, d${3:x} $4", options: "mA" },
+  { trigger: "oint", replacement: "\\oint", options: "mA" },
+  { trigger: "iint", replacement: "\\iint", options: "mA" },
+  { trigger: "iiint", replacement: "\\iiint", options: "mA" },
+  { trigger: "oinf", replacement: "\\int_{0}^{\\infty} $0 \\, d${1:x} $2", options: "mA" },
+  { trigger: "infi", replacement: "\\int_{-\\infty}^{\\infty} $0 \\, d${1:x} $2", options: "mA" },
+  { trigger: /([^\\])(arcsin|sin|arccos|cos|arctan|tan|csc|sec|cot)/, replacement: "[[0]]\\[[1]]", options: "rmA" },
+  { trigger: /\\(arcsin|sin|arccos|cos|arctan|tan|csc|sec|cot)([A-Za-gi-z])/, replacement: "\\[[0]] [[1]]", options: "rmA" },
+  { trigger: /\\(sinh|cosh|tanh|coth)([A-Za-z])/, replacement: "\\[[0]] [[1]]", options: "rmA" },
+  { trigger: /(arccsc|arcsec|arccot)/, replacement: "\\operatorname{[[0]]}$0", options: "mA", priority: 1 },
+  { trigger: "U", replacement: "\\underbrace{ ${VISUAL} }_{ $0 }", options: "mA" },
+  { trigger: "O", replacement: "\\overbrace{ ${VISUAL} }^{ $0 }", options: "mA" },
+  { trigger: "B", replacement: "\\underset{ $0 }{ ${VISUAL} }", options: "mA" },
+  { trigger: "C", replacement: "\\cancel{ ${VISUAL} }", options: "mA" },
+  { trigger: "K", replacement: "\\cancelto{ $0 }{ ${VISUAL} }", options: "mA" },
+  { trigger: "S", replacement: "\\sqrt{ ${VISUAL} }", options: "mA" },
+  { trigger: "kbt", replacement: "k_{B}T", options: "mA" },
+  { trigger: "msun", replacement: "M_{\\odot}", options: "mA" },
+  { trigger: "dag", replacement: "^{\\dagger}", options: "mA" },
+  { trigger: "o+", replacement: "\\oplus ", options: "mA" },
+  { trigger: "ox", replacement: "\\otimes ", options: "mA" },
+  { trigger: "bra", replacement: "\\bra{$0} $1", options: "mA" },
+  { trigger: "ket", replacement: "\\ket{$0} $1", options: "mA" },
+  { trigger: "brk", replacement: "\\braket{ $0 | $1 } $2", options: "mA" },
+  { trigger: "outer", replacement: "\\ket{${0:\\psi}} \\bra{${0:\\psi}} $1", options: "mA" },
+  { trigger: "pu", replacement: "\\pu{ $0 }", options: "mA" },
+  { trigger: "cee", replacement: "\\ce{ $0 }", options: "mA" },
+  { trigger: "he4", replacement: "{}^{4}_{2}He ", options: "mA" },
+  { trigger: "he3", replacement: "{}^{3}_{2}He ", options: "mA" },
+  { trigger: "iso", replacement: "{}^{${0:4}}_{${1:2}}${2:He}", options: "mA" },
+  { trigger: /([pbBvV]mat)/, replacement: "\\begin{[[0]]rix}\n$0\n\\end{[[0]]rix}", options: "rMA" },
+  { trigger: /(matrix|cases|align|array)/, replacement: "\\begin{[[0]]}\n$0\n\\end{[[0]]}", options: "rMA" },
+  { trigger: /([pbBvV]mat)/, replacement: "\\begin{[[0]]rix}$0\\end{[[0]]rix}", options: "rnA" },
+  { trigger: /(matrix|cases|align|array)/, replacement: "\\begin{[[0]]}$0\\end{[[0]]}", options: "rnA" },
+  { trigger: "avg", replacement: "\\langle $0 \\rangle $1", options: "mA" },
+  { trigger: "norm", replacement: "\\lvert $0 \\rvert $1", options: "mA", priority: 1 },
+  { trigger: "Norm", replacement: "\\lVert $0 \\rVert $1", options: "mA", priority: 1 },
+  { trigger: "ceil", replacement: "\\lceil $0 \\rceil $1", options: "mA" },
+  { trigger: "floor", replacement: "\\lfloor $0 \\rfloor $1", options: "mA" },
+  { trigger: "mod", replacement: "|$0|$1", options: "mA" },
+  { trigger: "(", replacement: "(${VISUAL})", options: "mA" },
+  { trigger: "[", replacement: "[${VISUAL}]", options: "mA" },
+  { trigger: "{", replacement: "{${VISUAL}}", options: "mA" },
+  { trigger: "(", replacement: "($0)$1", options: "mA" },
+  { trigger: "{", replacement: "{$0}$1", options: "mA" },
+  { trigger: "[", replacement: "[$0]$1", options: "mA" },
+  { trigger: "lr(", replacement: "\\left( $0 \\right) $1", options: "mA" },
+  { trigger: "lr{", replacement: "\\left\\{ $0 \\right\\} $1", options: "mA" },
+  { trigger: "lr[", replacement: "\\left[ $0 \\right] $1", options: "mA" },
+  { trigger: "lr|", replacement: "\\left| $0 \\right| $1", options: "mA" },
+  { trigger: "lra", replacement: "\\left< $0 \\right> $1", options: "mA" },
+  { trigger: "tayl", replacement: "${0:f}(${1:x} + ${2:h}) = ${0:f}(${1:x}) + ${0:f}'(${1:x})${2:h} + ${0:f}''(${1:x}) \\frac{${2:h}^{2}}{2!} + \\dots$3", options: "mA" },
+  {
+    trigger: /iden(\d)/,
+    replacement: (match) => {
+      const size = Number(match[1]);
+      const rows = Array.from({ length: size }, (_, row) => {
+        return Array.from({ length: size }, (_2, col) => row === col ? "1" : "0").join(" & ");
+      });
+      return `\\begin{pmatrix}
+${rows.join(" \\\\\n")}
+\\end{pmatrix}`;
+    },
+    options: "mA"
+  },
+  {
+    trigger: /(?<=(?:\n|^)[ \t]*>*)(?<marker>\d+[.)]|[-*+])(?<whitespace>[ \t]+)(?<text>.*)dm/,
+    replacement: (match) => {
+      var _a, _b, _c, _d;
+      const groups = (_a = match.groups) != null ? _a : {};
+      const marker = (_b = groups.marker) != null ? _b : "";
+      const whitespace = (_c = groups.whitespace) != null ? _c : "";
+      const text = (_d = groups.text) != null ? _d : "";
+      const firstLine = marker + whitespace + text;
+      const indent = " ".repeat(marker.length) + whitespace;
+      return `${firstLine}
+${indent}$$
+${indent}	$0
+${indent}$$`;
+    },
+    options: "rtA",
+    priority: 2
+  }
+];
+var latex_suite_snippets_default = latexSuiteSnippets;
+
+// src/latex-snippet-extension.ts
+function createLatexSnippetExtension(snippets) {
+  return [
+    import_view.keymap.of([
+      {
+        key: "Tab",
+        run: (view) => expandBestSnippet(view, snippets, false)
+      }
+    ]),
+    import_view.ViewPlugin.fromClass(
+      class {
+        constructor(view) {
+          this.view = view;
+          this.timer = null;
+        }
+        update(update) {
+          if (!update.docChanged || !this.view.hasFocus) {
+            return;
+          }
+          if (this.timer !== null) {
+            window.clearTimeout(this.timer);
+          }
+          this.timer = window.setTimeout(() => {
+            this.timer = null;
+            expandBestSnippet(this.view, snippets, true);
+          }, 0);
+        }
+        destroy() {
+          if (this.timer !== null) {
+            window.clearTimeout(this.timer);
+          }
+        }
+      }
+    )
+  ];
+}
+function expandBestSnippet(view, snippets, autoOnly) {
+  const snippetMatch = findBestSnippetMatch(view, snippets, autoOnly);
+  if (!snippetMatch) {
+    return false;
+  }
+  const replacement = prepareReplacement(snippetMatch.snippet, snippetMatch.match);
+  const selection = replacement.selectionFrom === null || replacement.selectionTo === null ? void 0 : {
+    anchor: snippetMatch.from + replacement.selectionFrom,
+    head: snippetMatch.from + replacement.selectionTo
+  };
+  view.dispatch({
+    changes: {
+      from: snippetMatch.from,
+      to: snippetMatch.to,
+      insert: replacement.text
+    },
+    selection,
+    userEvent: "input.complete"
+  });
+  return true;
+}
+function findBestSnippetMatch(view, snippets, autoOnly) {
+  var _a;
+  const selection = view.state.selection.main;
+  if (!selection.empty) {
+    return null;
+  }
+  const cursor = selection.head;
+  const textBeforeCursor = view.state.doc.sliceString(0, cursor);
+  const context = getMathContext(textBeforeCursor);
+  const matches = [];
+  snippets.forEach((snippet, order) => {
+    if (autoOnly && !snippet.options.includes("A")) {
+      return;
+    }
+    if (!snippetAppliesToContext(snippet, context)) {
+      return;
+    }
+    const match = matchSnippetTrigger(snippet, textBeforeCursor);
+    if (!match) {
+      return;
+    }
+    matches.push({
+      snippet,
+      from: cursor - match.length,
+      to: cursor,
+      match: match.regexMatch,
+      order
+    });
+  });
+  matches.sort((left, right) => {
+    var _a2, _b;
+    const priorityDelta = ((_a2 = right.snippet.priority) != null ? _a2 : 0) - ((_b = left.snippet.priority) != null ? _b : 0);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    const lengthDelta = right.to - right.from - (left.to - left.from);
+    if (lengthDelta !== 0) {
+      return lengthDelta;
+    }
+    return left.order - right.order;
+  });
+  return (_a = matches[0]) != null ? _a : null;
+}
+function snippetAppliesToContext(snippet, context) {
+  const options = snippet.options;
+  const textAllowed = options.includes("t");
+  const inlineAllowed = options.includes("n");
+  const displayAllowed = options.includes("M");
+  const mathAllowed = options.includes("m") || inlineAllowed || displayAllowed;
+  if (displayAllowed && context === "display") {
+    return true;
+  }
+  if (inlineAllowed && context === "inline") {
+    return true;
+  }
+  if (mathAllowed && !inlineAllowed && !displayAllowed && context !== "text") {
+    return true;
+  }
+  if (textAllowed && context === "text") {
+    return true;
+  }
+  return !textAllowed && !mathAllowed;
+}
+function matchSnippetTrigger(snippet, textBeforeCursor) {
+  if (snippet.trigger instanceof RegExp || snippet.options.includes("r")) {
+    const regex = snippet.trigger instanceof RegExp ? snippet.trigger : new RegExp(expandSnippetVariables(snippet.trigger));
+    const anchored = new RegExp(`${regex.source}$`, regex.flags.replace(/[gy]/g, ""));
+    const match = anchored.exec(textBeforeCursor);
+    if (!match) {
+      return null;
+    }
+    return {
+      length: match[0].length,
+      regexMatch: match
+    };
+  }
+  if (!textBeforeCursor.endsWith(snippet.trigger)) {
+    return null;
+  }
+  return {
+    length: snippet.trigger.length,
+    regexMatch: null
+  };
+}
+function prepareReplacement(snippet, match) {
+  const rawReplacement = typeof snippet.replacement === "function" ? snippet.replacement(match != null ? match : [""]) : snippet.replacement;
+  const withMatchGroups = rawReplacement.replace(/\[\[(\d+)]]/g, (_, index) => {
+    var _a;
+    return (_a = match == null ? void 0 : match[Number(index) + 1]) != null ? _a : "";
+  });
+  return resolvePlaceholders(withMatchGroups);
+}
+function resolvePlaceholders(replacement) {
+  var _a;
+  let text = "";
+  let cursor = 0;
+  let selectionFrom = null;
+  let selectionTo = null;
+  const placeholderPattern = /\$\{VISUAL}|\$\{(\d+):([^}]*)}|\$(\d+)/g;
+  let match;
+  let lastIndex = 0;
+  while ((match = placeholderPattern.exec(replacement)) !== null) {
+    const literal = replacement.slice(lastIndex, match.index);
+    text += literal;
+    cursor += literal.length;
+    const defaultValue = (_a = match[2]) != null ? _a : "";
+    if (selectionFrom === null) {
+      selectionFrom = cursor;
+      selectionTo = cursor + defaultValue.length;
+    }
+    text += defaultValue;
+    cursor += defaultValue.length;
+    lastIndex = placeholderPattern.lastIndex;
+  }
+  text += replacement.slice(lastIndex);
+  return {
+    text,
+    selectionFrom,
+    selectionTo
+  };
+}
+function expandSnippetVariables(pattern) {
+  return pattern.replace(/\$\{([A-Z_]+)}/g, (_, name) => {
+    var _a;
+    return (_a = SNIPPET_VARIABLES[name]) != null ? _a : "";
+  });
+}
+function getMathContext(textBeforeCursor) {
+  let context = "text";
+  for (let index = 0; index < textBeforeCursor.length; index += 1) {
+    if (textBeforeCursor[index] !== "$" || isEscaped(textBeforeCursor, index)) {
+      continue;
+    }
+    if (textBeforeCursor[index + 1] === "$") {
+      context = context === "display" ? "text" : "display";
+      index += 1;
+      continue;
+    }
+    if (context !== "display") {
+      context = context === "inline" ? "text" : "inline";
+    }
+  }
+  return context;
+}
+function isEscaped(text, index) {
+  let slashCount = 0;
+  let cursor = index - 1;
+  while (cursor >= 0 && text[cursor] === "\\") {
+    slashCount += 1;
+    cursor -= 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+// src/main.ts
 var DEFAULT_SETTINGS = {
   defaultTextWidth: 500,
   replaceSelectedText: true
@@ -157,12 +671,12 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
     insertButton.addEventListener("click", () => {
       void this.submit();
     });
-    this.editorView = new import_view.EditorView({
+    this.editorView = new import_view2.EditorView({
       state: import_state.EditorState.create({
         doc: this.options.initialText,
         extensions: [
-          import_view.EditorView.lineWrapping,
-          import_view.EditorView.theme({
+          import_view2.EditorView.lineWrapping,
+          import_view2.EditorView.theme({
             "&": {
               minHeight: "260px"
             },
@@ -170,7 +684,7 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
               fontFamily: "var(--font-text)"
             }
           }),
-          import_view.keymap.of([
+          import_view2.keymap.of([
             {
               key: "Mod-Enter",
               run: () => {
@@ -186,6 +700,7 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
               }
             }
           ]),
+          createLatexSnippetExtension(latex_suite_snippets_default),
           latexSuiteMarkdownLanguage.extension,
           ...this.options.latexSuiteExtensions
         ]
@@ -328,7 +843,7 @@ function buildLatexSuiteMarkdownTree(text) {
 }
 function findNextMathDelimiter(text, from) {
   for (let index = from; index < text.length; index += 1) {
-    if (text[index] !== "$" || isEscaped(text, index)) {
+    if (text[index] !== "$" || isEscaped2(text, index)) {
       continue;
     }
     if (text[index + 1] === "$") {
@@ -350,7 +865,7 @@ function findNextMathDelimiter(text, from) {
 }
 function findClosingMathDelimiter(text, from, marker) {
   for (let index = from; index < text.length; index += 1) {
-    if (text[index] !== "$" || isEscaped(text, index)) {
+    if (text[index] !== "$" || isEscaped2(text, index)) {
       continue;
     }
     if (marker === "$$") {
@@ -371,7 +886,7 @@ function findClosingMathDelimiter(text, from, marker) {
   }
   return null;
 }
-function isEscaped(text, index) {
+function isEscaped2(text, index) {
   let slashCount = 0;
   let cursor = index - 1;
   while (cursor >= 0 && text[cursor] === "\\") {

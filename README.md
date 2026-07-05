@@ -9,6 +9,7 @@ This plugin is designed for a very specific workflow: you want the fast LaTeX in
 - Adds a command: `Insert enhanced text into Excalidraw`
 - Opens a CodeMirror-based text input modal while an Excalidraw drawing is active
 - Reuses LaTeX Suite editor extensions when LaTeX Suite is installed and enabled
+- Includes a built-in snippet engine based on the LaTeX Suite-style snippet profile in this repository
 - Lets LaTeX Suite snippets trigger inside `$...$` and `$$...$$` math regions
 - Inserts the final content into Excalidraw as a normal text element
 - Updates a selected Excalidraw text element when exactly one text element is selected
@@ -52,6 +53,16 @@ The release tag, release title, and `manifest.json` version are kept in sync.
 6. Press `Cmd/Ctrl + Enter` or click `Insert`.
 
 If a single Excalidraw text element is selected, the modal pre-fills its text and updates that element on submit. Otherwise, the command creates a new text element near the current Excalidraw viewport center.
+
+## Snippet Input
+
+The modal has its own LaTeX Suite-style snippet engine, so the core shortcuts work even when LaTeX Suite's editor extension cannot fully attach to this custom input box.
+
+- Text mode shortcuts: type `mk` for inline math or `dm` for display math.
+- Math mode shortcuts: type triggers such as `@a`, `sr`, `sq`, `//`, `sum`, `lim`, `->`, `RR`, `NN`, `pmat`, and many others from the bundled snippet profile.
+- Manual snippets: type triggers like `\sum` or `\int`, then press `Tab` to expand templates with placeholders.
+
+Visual-selection snippets from LaTeX Suite are treated as normal insertions in this modal because this command creates plain Excalidraw text rather than editing an Obsidian Markdown selection.
 
 ## Settings
 

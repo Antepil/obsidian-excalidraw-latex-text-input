@@ -1,7 +1,7 @@
 {
   "id": "excalidraw-latex-text-input",
   "name": "Excalidraw LaTeX Text Input",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "minAppVersion": "1.5.0",
   "description": "Adds an enhanced plain-text input command for Excalidraw that can reuse LaTeX Suite snippets while editing.",
   "author": "Antepil",

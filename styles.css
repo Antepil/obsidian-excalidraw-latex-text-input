@@ -1,15 +1,15 @@
 .excalidraw-latex-text-modal {
-  width: min(760px, 92vw);
+  width: min(640px, 92vw);
 }
 
 .excalidraw-latex-text-modal .modal-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .excalidraw-latex-text-editor {
-  min-height: 260px;
+  min-height: 44px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   overflow: hidden;
@@ -17,21 +17,101 @@
 }
 
 .excalidraw-latex-text-editor .cm-editor {
-  min-height: 260px;
-  height: 100%;
+  min-height: 44px;
+  height: auto;
   background: var(--background-primary);
   color: var(--text-normal);
 }
 
+.excalidraw-latex-text-editor .cm-scroller {
+  overflow: auto;
+  max-height: 320px;
+}
+
 .excalidraw-latex-text-editor .cm-content {
-  padding: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
   font-family: var(--font-text);
   font-size: var(--font-ui-medium);
   line-height: 1.45;
 }
 
+.excalidraw-latex-text-editor .cm-line {
+  min-height: 24px;
+}
+
 .excalidraw-latex-text-editor .cm-focused {
   outline: none;
+}
+
+.excalidraw-latex-text-style-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.excalidraw-latex-text-style-section {
+  display: grid;
+  gap: 8px;
+}
+
+.excalidraw-latex-text-style-label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: 500;
+}
+
+.excalidraw-latex-text-style-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.excalidraw-latex-text-swatch,
+.excalidraw-latex-text-segment {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  min-width: 44px;
+  padding: 0 12px;
+}
+
+.excalidraw-latex-text-swatch {
+  position: relative;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
+.excalidraw-latex-text-swatch::before {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--swatch-color);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+.excalidraw-latex-text-segment {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+}
+
+.excalidraw-latex-text-icon-segment svg {
+  width: 18px;
+  height: 18px;
+}
+
+.excalidraw-latex-text-swatch.is-selected,
+.excalidraw-latex-text-segment.is-selected {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 28%, transparent);
 }
 
 .excalidraw-latex-text-footer {

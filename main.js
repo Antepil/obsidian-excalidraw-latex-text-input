@@ -568,6 +568,31 @@ var CLOSE_MATH_NODE = "formatting_formatting-math_formatting-math-end_keyword_ma
 var OPEN_DISPLAY_MATH_NODE = "formatting_formatting-math_formatting-math-begin_keyword_math_math-block";
 var EXCALIDRAW_PLUGIN_ID = "obsidian-excalidraw-plugin";
 var LATEX_SUITE_PLUGIN_ID = "obsidian-latex-suite";
+var DEFAULT_TEXT_STYLE = {
+  strokeColor: "#1e1e1e",
+  fontSize: 20,
+  textAlign: "left"
+};
+var STROKE_OPTIONS = [
+  { label: "Black", value: "#1e1e1e" },
+  { label: "Red", value: "#e03131" },
+  { label: "Green", value: "#2f9e44" },
+  { label: "Blue", value: "#1971c2" },
+  { label: "Orange", value: "#f08c00" },
+  { label: "Purple", value: "#9c36b5" }
+];
+var FONT_SIZE_OPTIONS = [
+  { label: "XS", value: 16 },
+  { label: "S", value: 20 },
+  { label: "M", value: 28 },
+  { label: "L", value: 36 },
+  { label: "XL", value: 48 }
+];
+var TEXT_ALIGN_OPTIONS = [
+  { label: "Left", value: "left", icon: "align-left" },
+  { label: "Center", value: "center", icon: "align-center" },
+  { label: "Right", value: "right", icon: "align-right" }
+];
 var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
   async onload() {
     await this.loadSettings();
@@ -605,9 +630,10 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
     }
     new MixedLatexTextModal(this.app, {
       initialText,
+      initialStyle: context.initialStyle,
       latexSuiteExtensions: getLatexSuiteExtensions(this.app),
-      onSubmit: async (text) => {
-        await this.insertIntoExcalidraw(text, context);
+      onSubmit: async (text, style) => {
+        await this.insertIntoExcalidraw(text, style, context);
       }
     }).open();
   }
@@ -630,10 +656,11 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
       ea,
       view,
       selectedTextElement,
+      initialStyle: getInitialTextStyle(ea, selectedTextElement),
       latexSuiteAvailable: getLatexSuiteExtensions(this.app).length > 0
     };
   }
-  async insertIntoExcalidraw(text, context) {
+  async insertIntoExcalidraw(text, style, context) {
     const normalizedText = text.trimEnd();
     if (!normalizedText) {
       new import_obsidian.Notice("Nothing to insert.");
@@ -644,7 +671,8 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
         context.ea,
         context.view,
         context.selectedTextElement,
-        normalizedText
+        normalizedText,
+        style
       );
       if (didReplace) {
         new import_obsidian.Notice("Updated Excalidraw text.");
@@ -656,6 +684,7 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
       context.ea,
       context.view,
       normalizedText,
+      style,
       this.settings.defaultTextWidth
     );
     if (!didInsert) {
@@ -670,6 +699,7 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
     super(app);
     this.options = options;
     this.editorView = null;
+    this.textStyle = { ...options.initialStyle };
   }
   onOpen() {
     this.modalEl.addClass("excalidraw-latex-text-modal");
@@ -678,6 +708,7 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
     const editorHost = this.contentEl.createDiv({
       cls: "excalidraw-latex-text-editor"
     });
+    this.createStyleControls();
     const footer = this.contentEl.createDiv({
       cls: "excalidraw-latex-text-footer"
     });
@@ -701,13 +732,32 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
           import_view2.EditorView.lineWrapping,
           import_view2.EditorView.theme({
             "&": {
-              minHeight: "260px"
+              minHeight: "44px"
             },
             ".cm-scroller": {
-              fontFamily: "var(--font-text)"
+              fontFamily: "var(--font-text)",
+              maxHeight: "320px",
+              overflow: "auto"
             }
           }),
           import_view2.keymap.of([
+            {
+              key: "Shift-Enter",
+              run: (view) => {
+                insertEditorLineBreak(view);
+                return true;
+              }
+            },
+            {
+              key: "Enter",
+              run: (view) => {
+                if (view.composing) {
+                  return false;
+                }
+                void this.submit();
+                return true;
+              }
+            },
             {
               key: "Mod-Enter",
               run: () => {
@@ -735,6 +785,72 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
       return (_a = this.editorView) == null ? void 0 : _a.focus();
     }, 0);
   }
+  createStyleControls() {
+    const panel = this.contentEl.createDiv({
+      cls: "excalidraw-latex-text-style-panel"
+    });
+    this.createStrokeControls(panel);
+    this.createFontSizeControls(panel);
+    this.createTextAlignControls(panel);
+  }
+  createStrokeControls(panel) {
+    const group = createStyleSection(panel, "Stroke", "excalidraw-latex-text-swatches");
+    for (const option of STROKE_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "excalidraw-latex-text-swatch";
+      button.dataset.value = option.value;
+      button.setAttribute("aria-label", option.label);
+      button.setAttribute("title", option.label);
+      button.style.setProperty("--swatch-color", option.value);
+      button.addEventListener("click", () => {
+        var _a;
+        this.textStyle.strokeColor = option.value;
+        markSelectedStyleButton(group, option.value);
+        (_a = this.editorView) == null ? void 0 : _a.focus();
+      });
+      group.appendChild(button);
+    }
+    markSelectedStyleButton(group, this.textStyle.strokeColor);
+  }
+  createFontSizeControls(panel) {
+    const group = createStyleSection(panel, "Font size", "excalidraw-latex-text-segments");
+    for (const option of FONT_SIZE_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "excalidraw-latex-text-segment";
+      button.dataset.value = String(option.value);
+      button.textContent = option.label;
+      button.addEventListener("click", () => {
+        var _a;
+        this.textStyle.fontSize = option.value;
+        markSelectedStyleButton(group, String(option.value));
+        (_a = this.editorView) == null ? void 0 : _a.focus();
+      });
+      group.appendChild(button);
+    }
+    markSelectedStyleButton(group, String(this.textStyle.fontSize));
+  }
+  createTextAlignControls(panel) {
+    const group = createStyleSection(panel, "Text align", "excalidraw-latex-text-segments");
+    for (const option of TEXT_ALIGN_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "excalidraw-latex-text-segment excalidraw-latex-text-icon-segment";
+      button.dataset.value = option.value;
+      button.setAttribute("aria-label", option.label);
+      button.setAttribute("title", option.label);
+      (0, import_obsidian.setIcon)(button, option.icon);
+      button.addEventListener("click", () => {
+        var _a;
+        this.textStyle.textAlign = option.value;
+        markSelectedStyleButton(group, option.value);
+        (_a = this.editorView) == null ? void 0 : _a.focus();
+      });
+      group.appendChild(button);
+    }
+    markSelectedStyleButton(group, this.textStyle.textAlign);
+  }
   onClose() {
     var _a;
     (_a = this.editorView) == null ? void 0 : _a.destroy();
@@ -746,8 +862,9 @@ var MixedLatexTextModal = class extends import_obsidian.Modal {
       return;
     }
     const text = this.editorView.state.doc.toString();
+    const style = { ...this.textStyle };
     this.close();
-    await this.options.onSubmit(text);
+    await this.options.onSubmit(text, style);
   }
 };
 var ExcalidrawLatexTextSettingTab = class extends import_obsidian.PluginSettingTab {
@@ -776,6 +893,38 @@ var ExcalidrawLatexTextSettingTab = class extends import_obsidian.PluginSettingT
     });
   }
 };
+function insertEditorLineBreak(view) {
+  const selection = view.state.selection.main;
+  const anchor = selection.from + 1;
+  view.dispatch({
+    changes: {
+      from: selection.from,
+      to: selection.to,
+      insert: "\n"
+    },
+    selection: {
+      anchor
+    },
+    userEvent: "input"
+  });
+}
+function createStyleSection(panel, label, groupClassName) {
+  const section = panel.createDiv({
+    cls: "excalidraw-latex-text-style-section"
+  });
+  section.createDiv({
+    cls: "excalidraw-latex-text-style-label",
+    text: label
+  });
+  return section.createDiv({
+    cls: `excalidraw-latex-text-style-group ${groupClassName}`
+  });
+}
+function markSelectedStyleButton(group, value) {
+  for (const button of Array.from(group.querySelectorAll("button"))) {
+    button.toggleClass("is-selected", button.dataset.value === value);
+  }
+}
 function getActiveExcalidrawView(app) {
   var _a, _b, _c;
   const leaf = app.workspace.activeLeaf;
@@ -947,11 +1096,39 @@ function getSingleSelectedTextElement(ea) {
   }
   return null;
 }
-async function replaceTextElement(ea, view, element, text) {
+function getInitialTextStyle(ea, selectedTextElement) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
+  const appState = (_c = (_b = (_a = safeGetExcalidrawApi(ea)) == null ? void 0 : _a.getAppState) == null ? void 0 : _b.call(_a)) != null ? _c : {};
+  const strokeColor = (_g = (_f = (_d = getStringValue(selectedTextElement == null ? void 0 : selectedTextElement.strokeColor)) != null ? _d : getStringValue(appState.currentItemStrokeColor)) != null ? _f : getStringValue((_e = ea.style) == null ? void 0 : _e.strokeColor)) != null ? _g : DEFAULT_TEXT_STYLE.strokeColor;
+  const fontSize = getClosestFontSize(
+    (_k = (_j = (_h = getNumberValue(selectedTextElement == null ? void 0 : selectedTextElement.fontSize)) != null ? _h : getNumberValue(appState.currentItemFontSize)) != null ? _j : getNumberValue((_i = ea.style) == null ? void 0 : _i.fontSize)) != null ? _k : DEFAULT_TEXT_STYLE.fontSize
+  );
+  const textAlign = (_o = (_n = (_l = getTextAlign(selectedTextElement == null ? void 0 : selectedTextElement.textAlign)) != null ? _l : getTextAlign(appState.currentItemTextAlign)) != null ? _n : getTextAlign((_m = ea.style) == null ? void 0 : _m.textAlign)) != null ? _o : DEFAULT_TEXT_STYLE.textAlign;
+  return {
+    strokeColor,
+    fontSize,
+    textAlign
+  };
+}
+function getClosestFontSize(value) {
+  return FONT_SIZE_OPTIONS.reduce((closest, option) => {
+    return Math.abs(option.value - value) < Math.abs(closest - value) ? option.value : closest;
+  }, FONT_SIZE_OPTIONS[0].value);
+}
+function getTextAlign(value) {
+  return value === "left" || value === "center" || value === "right" ? value : null;
+}
+function getStringValue(value) {
+  return typeof value === "string" && value ? value : null;
+}
+function getNumberValue(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+async function replaceTextElement(ea, view, element, text, style) {
   if (!setExcalidrawAutomateView(ea, view)) {
     return false;
   }
-  const updated = withUpdatedText(element, text);
+  const updated = withUpdatedTextAndStyle(element, text, style);
   if (ea.copyViewElementsToEAforEditing && ea.addElementsToView) {
     try {
       ea.copyViewElementsToEAforEditing([updated]);
@@ -966,7 +1143,7 @@ async function replaceTextElement(ea, view, element, text) {
   }
   try {
     const elements = api.getSceneElements().map((sceneElement) => {
-      return sceneElement.id === element.id ? withUpdatedText(sceneElement, text) : sceneElement;
+      return sceneElement.id === element.id ? withUpdatedTextAndStyle(sceneElement, text, style) : sceneElement;
     });
     api.updateScene({
       elements,
@@ -978,7 +1155,7 @@ async function replaceTextElement(ea, view, element, text) {
     return false;
   }
 }
-async function insertNewTextElement(ea, view, text, width) {
+async function insertNewTextElement(ea, view, text, style, width) {
   var _a, _b, _c, _d, _e;
   if (!ea.addText || !ea.addElementsToView) {
     return false;
@@ -991,9 +1168,11 @@ async function insertNewTextElement(ea, view, text, width) {
     const appState = (_b = (_a = api == null ? void 0 : api.getAppState) == null ? void 0 : _a.call(api)) != null ? _b : {};
     (_c = ea.reset) == null ? void 0 : _c.call(ea);
     applyCurrentTextStyle(ea, appState);
+    applySelectedTextStyle(ea, style);
     const point = (_e = (_d = ea.getViewCenterPosition) == null ? void 0 : _d.call(ea)) != null ? _e : getViewportCenterScenePoint(view, appState);
     const id = ea.addText(point.x, point.y, text, {
-      width
+      width,
+      textAlign: style.textAlign
     });
     if (!id) {
       return false;
@@ -1017,10 +1196,13 @@ function setExcalidrawAutomateView(ea, view) {
     return false;
   }
 }
-function withUpdatedText(element, text) {
+function withUpdatedTextAndStyle(element, text, style) {
   const next = {
     ...element,
-    text
+    text,
+    strokeColor: style.strokeColor,
+    fontSize: style.fontSize,
+    textAlign: style.textAlign
   };
   if ("rawText" in next) {
     next.rawText = text;
@@ -1050,6 +1232,14 @@ function applyCurrentTextStyle(ea, appState) {
   copyStyleValue(appState, "currentItemTextAlign", ea.style, "textAlign");
   copyStyleValue(appState, "currentItemOpacity", ea.style, "opacity");
   copyStyleValue(appState, "currentItemRoughness", ea.style, "roughness");
+}
+function applySelectedTextStyle(ea, style) {
+  if (!ea.style) {
+    return;
+  }
+  ea.style.strokeColor = style.strokeColor;
+  ea.style.fontSize = style.fontSize;
+  ea.style.textAlign = style.textAlign;
 }
 function copyStyleValue(source, sourceKey, target, targetKey) {
   const value = source[sourceKey];

@@ -16,7 +16,8 @@ import {
   Notice,
   Plugin,
   PluginSettingTab,
-  Setting
+  Setting,
+  setIcon
 } from "obsidian";
 import { createLatexSnippetExtension } from "./latex-snippet-extension";
 import latexSuiteSnippets from "./latex-suite-snippets";
@@ -85,13 +86,23 @@ interface InsertContext {
   ea: ExcalidrawAutomateApi;
   view: unknown;
   selectedTextElement: ExcalidrawElement | null;
+  initialStyle: TextStyleSelection;
   latexSuiteAvailable: boolean;
+}
+
+type TextAlign = "left" | "center" | "right";
+
+interface TextStyleSelection {
+  strokeColor: string;
+  fontSize: number;
+  textAlign: TextAlign;
 }
 
 interface ModalOptions {
   initialText: string;
+  initialStyle: TextStyleSelection;
   latexSuiteExtensions: Extension[];
-  onSubmit: (text: string) => Promise<void>;
+  onSubmit: (text: string, style: TextStyleSelection) => Promise<void>;
 }
 
 const DEFAULT_SETTINGS: ExcalidrawLatexTextSettings = {
@@ -109,6 +120,31 @@ const CLOSE_MATH_NODE = "formatting_formatting-math_formatting-math-end_keyword_
 const OPEN_DISPLAY_MATH_NODE = "formatting_formatting-math_formatting-math-begin_keyword_math_math-block";
 const EXCALIDRAW_PLUGIN_ID = "obsidian-excalidraw-plugin";
 const LATEX_SUITE_PLUGIN_ID = "obsidian-latex-suite";
+const DEFAULT_TEXT_STYLE: TextStyleSelection = {
+  strokeColor: "#1e1e1e",
+  fontSize: 20,
+  textAlign: "left"
+};
+const STROKE_OPTIONS = [
+  { label: "Black", value: "#1e1e1e" },
+  { label: "Red", value: "#e03131" },
+  { label: "Green", value: "#2f9e44" },
+  { label: "Blue", value: "#1971c2" },
+  { label: "Orange", value: "#f08c00" },
+  { label: "Purple", value: "#9c36b5" }
+];
+const FONT_SIZE_OPTIONS = [
+  { label: "XS", value: 16 },
+  { label: "S", value: 20 },
+  { label: "M", value: 28 },
+  { label: "L", value: 36 },
+  { label: "XL", value: 48 }
+];
+const TEXT_ALIGN_OPTIONS: Array<{ label: string; value: TextAlign; icon: string }> = [
+  { label: "Left", value: "left", icon: "align-left" },
+  { label: "Center", value: "center", icon: "align-center" },
+  { label: "Right", value: "right", icon: "align-right" }
+];
 
 export default class ExcalidrawLatexTextInputPlugin extends Plugin {
   settings!: ExcalidrawLatexTextSettings;
@@ -158,9 +194,10 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
 
     new MixedLatexTextModal(this.app, {
       initialText,
+      initialStyle: context.initialStyle,
       latexSuiteExtensions: getLatexSuiteExtensions(this.app),
-      onSubmit: async (text) => {
-        await this.insertIntoExcalidraw(text, context);
+      onSubmit: async (text, style) => {
+        await this.insertIntoExcalidraw(text, style, context);
       }
     }).open();
   }
@@ -190,11 +227,16 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
       ea,
       view,
       selectedTextElement,
+      initialStyle: getInitialTextStyle(ea, selectedTextElement),
       latexSuiteAvailable: getLatexSuiteExtensions(this.app).length > 0
     };
   }
 
-  private async insertIntoExcalidraw(text: string, context: InsertContext): Promise<void> {
+  private async insertIntoExcalidraw(
+    text: string,
+    style: TextStyleSelection,
+    context: InsertContext
+  ): Promise<void> {
     const normalizedText = text.trimEnd();
     if (!normalizedText) {
       new Notice("Nothing to insert.");
@@ -206,7 +248,8 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
         context.ea,
         context.view,
         context.selectedTextElement,
-        normalizedText
+        normalizedText,
+        style
       );
       if (didReplace) {
         new Notice("Updated Excalidraw text.");
@@ -220,6 +263,7 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
       context.ea,
       context.view,
       normalizedText,
+      style,
       this.settings.defaultTextWidth
     );
 
@@ -234,9 +278,11 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
 
 class MixedLatexTextModal extends Modal {
   private editorView: EditorView | null = null;
+  private textStyle: TextStyleSelection;
 
   constructor(app: App, private readonly options: ModalOptions) {
     super(app);
+    this.textStyle = { ...options.initialStyle };
   }
 
   onOpen(): void {
@@ -247,6 +293,8 @@ class MixedLatexTextModal extends Modal {
     const editorHost = this.contentEl.createDiv({
       cls: "excalidraw-latex-text-editor"
     });
+
+    this.createStyleControls();
 
     const footer = this.contentEl.createDiv({
       cls: "excalidraw-latex-text-footer"
@@ -274,13 +322,33 @@ class MixedLatexTextModal extends Modal {
           EditorView.lineWrapping,
           EditorView.theme({
             "&": {
-              minHeight: "260px"
+              minHeight: "44px"
             },
             ".cm-scroller": {
-              fontFamily: "var(--font-text)"
+              fontFamily: "var(--font-text)",
+              maxHeight: "320px",
+              overflow: "auto"
             }
           }),
           keymap.of([
+            {
+              key: "Shift-Enter",
+              run: (view) => {
+                insertEditorLineBreak(view);
+                return true;
+              }
+            },
+            {
+              key: "Enter",
+              run: (view) => {
+                if (view.composing) {
+                  return false;
+                }
+
+                void this.submit();
+                return true;
+              }
+            },
             {
               key: "Mod-Enter",
               run: () => {
@@ -307,6 +375,80 @@ class MixedLatexTextModal extends Modal {
     window.setTimeout(() => this.editorView?.focus(), 0);
   }
 
+  private createStyleControls(): void {
+    const panel = this.contentEl.createDiv({
+      cls: "excalidraw-latex-text-style-panel"
+    });
+
+    this.createStrokeControls(panel);
+    this.createFontSizeControls(panel);
+    this.createTextAlignControls(panel);
+  }
+
+  private createStrokeControls(panel: HTMLElement): void {
+    const group = createStyleSection(panel, "Stroke", "excalidraw-latex-text-swatches");
+
+    for (const option of STROKE_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "excalidraw-latex-text-swatch";
+      button.dataset.value = option.value;
+      button.setAttribute("aria-label", option.label);
+      button.setAttribute("title", option.label);
+      button.style.setProperty("--swatch-color", option.value);
+      button.addEventListener("click", () => {
+        this.textStyle.strokeColor = option.value;
+        markSelectedStyleButton(group, option.value);
+        this.editorView?.focus();
+      });
+      group.appendChild(button);
+    }
+
+    markSelectedStyleButton(group, this.textStyle.strokeColor);
+  }
+
+  private createFontSizeControls(panel: HTMLElement): void {
+    const group = createStyleSection(panel, "Font size", "excalidraw-latex-text-segments");
+
+    for (const option of FONT_SIZE_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "excalidraw-latex-text-segment";
+      button.dataset.value = String(option.value);
+      button.textContent = option.label;
+      button.addEventListener("click", () => {
+        this.textStyle.fontSize = option.value;
+        markSelectedStyleButton(group, String(option.value));
+        this.editorView?.focus();
+      });
+      group.appendChild(button);
+    }
+
+    markSelectedStyleButton(group, String(this.textStyle.fontSize));
+  }
+
+  private createTextAlignControls(panel: HTMLElement): void {
+    const group = createStyleSection(panel, "Text align", "excalidraw-latex-text-segments");
+
+    for (const option of TEXT_ALIGN_OPTIONS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "excalidraw-latex-text-segment excalidraw-latex-text-icon-segment";
+      button.dataset.value = option.value;
+      button.setAttribute("aria-label", option.label);
+      button.setAttribute("title", option.label);
+      setIcon(button, option.icon);
+      button.addEventListener("click", () => {
+        this.textStyle.textAlign = option.value;
+        markSelectedStyleButton(group, option.value);
+        this.editorView?.focus();
+      });
+      group.appendChild(button);
+    }
+
+    markSelectedStyleButton(group, this.textStyle.textAlign);
+  }
+
   onClose(): void {
     this.editorView?.destroy();
     this.editorView = null;
@@ -319,8 +461,9 @@ class MixedLatexTextModal extends Modal {
     }
 
     const text = this.editorView.state.doc.toString();
+    const style = { ...this.textStyle };
     this.close();
-    await this.options.onSubmit(text);
+    await this.options.onSubmit(text, style);
   }
 }
 
@@ -362,6 +505,47 @@ class ExcalidrawLatexTextSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+  }
+}
+
+function insertEditorLineBreak(view: EditorView): void {
+  const selection = view.state.selection.main;
+  const anchor = selection.from + 1;
+
+  view.dispatch({
+    changes: {
+      from: selection.from,
+      to: selection.to,
+      insert: "\n"
+    },
+    selection: {
+      anchor
+    },
+    userEvent: "input"
+  });
+}
+
+function createStyleSection(
+  panel: HTMLElement,
+  label: string,
+  groupClassName: string
+): HTMLElement {
+  const section = panel.createDiv({
+    cls: "excalidraw-latex-text-style-section"
+  });
+  section.createDiv({
+    cls: "excalidraw-latex-text-style-label",
+    text: label
+  });
+
+  return section.createDiv({
+    cls: `excalidraw-latex-text-style-group ${groupClassName}`
+  });
+}
+
+function markSelectedStyleButton(group: HTMLElement, value: string): void {
+  for (const button of Array.from(group.querySelectorAll("button"))) {
+    button.toggleClass("is-selected", button.dataset.value === value);
   }
 }
 
@@ -582,17 +766,66 @@ function getSingleSelectedTextElement(ea: ExcalidrawAutomateApi): ExcalidrawElem
   return null;
 }
 
+function getInitialTextStyle(
+  ea: ExcalidrawAutomateApi,
+  selectedTextElement: ExcalidrawElement | null
+): TextStyleSelection {
+  const appState = safeGetExcalidrawApi(ea)?.getAppState?.() ?? {};
+  const strokeColor =
+    getStringValue(selectedTextElement?.strokeColor) ??
+    getStringValue(appState.currentItemStrokeColor) ??
+    getStringValue(ea.style?.strokeColor) ??
+    DEFAULT_TEXT_STYLE.strokeColor;
+  const fontSize =
+    getClosestFontSize(
+      getNumberValue(selectedTextElement?.fontSize) ??
+      getNumberValue(appState.currentItemFontSize) ??
+      getNumberValue(ea.style?.fontSize) ??
+      DEFAULT_TEXT_STYLE.fontSize
+    );
+  const textAlign =
+    getTextAlign(selectedTextElement?.textAlign) ??
+    getTextAlign(appState.currentItemTextAlign) ??
+    getTextAlign(ea.style?.textAlign) ??
+    DEFAULT_TEXT_STYLE.textAlign;
+
+  return {
+    strokeColor,
+    fontSize,
+    textAlign
+  };
+}
+
+function getClosestFontSize(value: number): number {
+  return FONT_SIZE_OPTIONS.reduce((closest, option) => {
+    return Math.abs(option.value - value) < Math.abs(closest - value) ? option.value : closest;
+  }, FONT_SIZE_OPTIONS[0].value);
+}
+
+function getTextAlign(value: unknown): TextAlign | null {
+  return value === "left" || value === "center" || value === "right" ? value : null;
+}
+
+function getStringValue(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+function getNumberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 async function replaceTextElement(
   ea: ExcalidrawAutomateApi,
   view: unknown,
   element: ExcalidrawElement,
-  text: string
+  text: string,
+  style: TextStyleSelection
 ): Promise<boolean> {
   if (!setExcalidrawAutomateView(ea, view)) {
     return false;
   }
 
-  const updated = withUpdatedText(element, text);
+  const updated = withUpdatedTextAndStyle(element, text, style);
 
   if (ea.copyViewElementsToEAforEditing && ea.addElementsToView) {
     try {
@@ -610,7 +843,7 @@ async function replaceTextElement(
 
   try {
     const elements = api.getSceneElements().map((sceneElement) => {
-      return sceneElement.id === element.id ? withUpdatedText(sceneElement, text) : sceneElement;
+      return sceneElement.id === element.id ? withUpdatedTextAndStyle(sceneElement, text, style) : sceneElement;
     });
     api.updateScene({
       elements,
@@ -627,6 +860,7 @@ async function insertNewTextElement(
   ea: ExcalidrawAutomateApi,
   view: unknown,
   text: string,
+  style: TextStyleSelection,
   width: number
 ): Promise<boolean> {
   if (!ea.addText || !ea.addElementsToView) {
@@ -642,10 +876,12 @@ async function insertNewTextElement(
     const appState = api?.getAppState?.() ?? {};
     ea.reset?.();
     applyCurrentTextStyle(ea, appState);
+    applySelectedTextStyle(ea, style);
 
     const point = ea.getViewCenterPosition?.() ?? getViewportCenterScenePoint(view, appState);
     const id = ea.addText(point.x, point.y, text, {
-      width
+      width,
+      textAlign: style.textAlign
     });
 
     if (!id) {
@@ -673,10 +909,17 @@ function setExcalidrawAutomateView(ea: ExcalidrawAutomateApi, view: unknown): bo
   }
 }
 
-function withUpdatedText(element: ExcalidrawElement, text: string): ExcalidrawElement {
+function withUpdatedTextAndStyle(
+  element: ExcalidrawElement,
+  text: string,
+  style: TextStyleSelection
+): ExcalidrawElement {
   const next: ExcalidrawElement = {
     ...element,
-    text
+    text,
+    strokeColor: style.strokeColor,
+    fontSize: style.fontSize,
+    textAlign: style.textAlign
   };
 
   if ("rawText" in next) {
@@ -714,6 +957,19 @@ function applyCurrentTextStyle(
   copyStyleValue(appState, "currentItemTextAlign", ea.style, "textAlign");
   copyStyleValue(appState, "currentItemOpacity", ea.style, "opacity");
   copyStyleValue(appState, "currentItemRoughness", ea.style, "roughness");
+}
+
+function applySelectedTextStyle(
+  ea: ExcalidrawAutomateApi,
+  style: TextStyleSelection
+): void {
+  if (!ea.style) {
+    return;
+  }
+
+  ea.style.strokeColor = style.strokeColor;
+  ea.style.fontSize = style.fontSize;
+  ea.style.textAlign = style.textAlign;
 }
 
 function copyStyleValue(

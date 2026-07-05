@@ -9,6 +9,8 @@ This plugin is designed for a very specific workflow: you want the fast LaTeX in
 - Adds a command: `Insert enhanced text into Excalidraw`
 - Opens a CodeMirror-based text input modal while an Excalidraw drawing is active
 - Targets the active Excalidraw view before committing text through ExcalidrawAutomate
+- Starts with a compact one-line editor that grows as you add lines
+- Offers Stroke, Font size, and Text align controls below the editor
 - Reuses LaTeX Suite editor extensions when LaTeX Suite is installed and enabled
 - Includes a built-in snippet engine based on the LaTeX Suite-style snippet profile in this repository
 - Lets LaTeX Suite snippets trigger inside `$...$` and `$$...$$` math regions
@@ -51,7 +53,9 @@ The release tag, release title, and `manifest.json` version are kept in sync.
 3. Run `Excalidraw LaTeX Text Input: Insert enhanced text into Excalidraw` from the command palette.
 4. Optionally bind the command in Obsidian `Settings > Hotkeys`.
 5. Type text normally. Use `$...$` or `$$...$$` when you want LaTeX Suite snippets to behave like math input.
-6. Press `Cmd/Ctrl + Enter` or click `Insert`.
+6. Press `Enter` or click `Insert`.
+
+Use `Shift + Enter` to add a new line in the input box. The editor grows by one line as you add line breaks.
 
 If a single Excalidraw text element is selected, the modal pre-fills its text and updates that element on submit. Otherwise, the command creates a new text element near the current Excalidraw viewport center.
 

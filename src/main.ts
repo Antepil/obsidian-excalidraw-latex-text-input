@@ -66,15 +66,17 @@ interface ExcalidrawApi {
 
 interface ExcalidrawAutomateApi {
   reset?: () => void;
+  setView?: (view?: unknown, show?: boolean) => unknown;
   addText?: (
     x: number,
     y: number,
     text: string,
     options?: Record<string, unknown>
-  ) => string;
-  addElementsToView?: (repositionToCursor?: boolean) => Promise<void> | void;
+  ) => string | null;
+  addElementsToView?: (repositionToCursor?: boolean) => Promise<boolean> | boolean;
   copyViewElementsToEAforEditing?: (elements: ExcalidrawElement[]) => void;
   getViewSelectedElements?: () => ExcalidrawElement[];
+  getViewCenterPosition?: () => { x: number; y: number } | null;
   getExcalidrawAPI?: () => ExcalidrawApi;
   style?: Record<string, unknown>;
 }
@@ -175,6 +177,11 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
       return null;
     }
 
+    if (!setExcalidrawAutomateView(ea, view)) {
+      new Notice("Could not target the active Excalidraw view.");
+      return null;
+    }
+
     const selectedTextElement = this.settings.replaceSelectedText
       ? getSingleSelectedTextElement(ea)
       : null;
@@ -195,8 +202,14 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
     }
 
     if (context.selectedTextElement && this.settings.replaceSelectedText) {
-      const didReplace = await replaceTextElement(context.ea, context.selectedTextElement, normalizedText);
+      const didReplace = await replaceTextElement(
+        context.ea,
+        context.view,
+        context.selectedTextElement,
+        normalizedText
+      );
       if (didReplace) {
+        new Notice("Updated Excalidraw text.");
         return;
       }
 
@@ -212,7 +225,10 @@ export default class ExcalidrawLatexTextInputPlugin extends Plugin {
 
     if (!didInsert) {
       new Notice("Could not insert text into the active Excalidraw view.");
+      return;
     }
+
+    new Notice("Inserted Excalidraw text.");
   }
 }
 
@@ -568,16 +584,20 @@ function getSingleSelectedTextElement(ea: ExcalidrawAutomateApi): ExcalidrawElem
 
 async function replaceTextElement(
   ea: ExcalidrawAutomateApi,
+  view: unknown,
   element: ExcalidrawElement,
   text: string
 ): Promise<boolean> {
+  if (!setExcalidrawAutomateView(ea, view)) {
+    return false;
+  }
+
   const updated = withUpdatedText(element, text);
 
   if (ea.copyViewElementsToEAforEditing && ea.addElementsToView) {
     try {
       ea.copyViewElementsToEAforEditing([updated]);
-      await Promise.resolve(ea.addElementsToView(false));
-      return true;
+      return await Promise.resolve(ea.addElementsToView(false));
     } catch (error) {
       console.warn("Could not update text through ExcalidrawAutomate.", error);
     }
@@ -614,19 +634,41 @@ async function insertNewTextElement(
   }
 
   try {
+    if (!setExcalidrawAutomateView(ea, view)) {
+      return false;
+    }
+
     const api = safeGetExcalidrawApi(ea);
     const appState = api?.getAppState?.() ?? {};
     ea.reset?.();
     applyCurrentTextStyle(ea, appState);
 
-    const point = getViewportCenterScenePoint(view, appState);
-    ea.addText(point.x, point.y, text, {
+    const point = ea.getViewCenterPosition?.() ?? getViewportCenterScenePoint(view, appState);
+    const id = ea.addText(point.x, point.y, text, {
       width
     });
-    await Promise.resolve(ea.addElementsToView(false));
-    return true;
+
+    if (!id) {
+      return false;
+    }
+
+    return await Promise.resolve(ea.addElementsToView(false));
   } catch (error) {
     console.warn("Could not insert text through ExcalidrawAutomate.", error);
+    return false;
+  }
+}
+
+function setExcalidrawAutomateView(ea: ExcalidrawAutomateApi, view: unknown): boolean {
+  if (!ea.setView) {
+    return true;
+  }
+
+  try {
+    const target = ea.setView(view, false) ?? ea.setView("active", false) ?? ea.setView("auto", false);
+    return Boolean(target);
+  } catch (error) {
+    console.warn("Could not set ExcalidrawAutomate target view.", error);
     return false;
   }
 }

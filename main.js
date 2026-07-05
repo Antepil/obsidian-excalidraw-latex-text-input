@@ -621,6 +621,10 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
       new import_obsidian.Notice("Excalidraw plugin is not enabled.");
       return null;
     }
+    if (!setExcalidrawAutomateView(ea, view)) {
+      new import_obsidian.Notice("Could not target the active Excalidraw view.");
+      return null;
+    }
     const selectedTextElement = this.settings.replaceSelectedText ? getSingleSelectedTextElement(ea) : null;
     return {
       ea,
@@ -636,8 +640,14 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
       return;
     }
     if (context.selectedTextElement && this.settings.replaceSelectedText) {
-      const didReplace = await replaceTextElement(context.ea, context.selectedTextElement, normalizedText);
+      const didReplace = await replaceTextElement(
+        context.ea,
+        context.view,
+        context.selectedTextElement,
+        normalizedText
+      );
       if (didReplace) {
+        new import_obsidian.Notice("Updated Excalidraw text.");
         return;
       }
       new import_obsidian.Notice("Could not update the selected text. Creating a new text element instead.");
@@ -650,7 +660,9 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
     );
     if (!didInsert) {
       new import_obsidian.Notice("Could not insert text into the active Excalidraw view.");
+      return;
     }
+    new import_obsidian.Notice("Inserted Excalidraw text.");
   }
 };
 var MixedLatexTextModal = class extends import_obsidian.Modal {
@@ -935,13 +947,15 @@ function getSingleSelectedTextElement(ea) {
   }
   return null;
 }
-async function replaceTextElement(ea, element, text) {
+async function replaceTextElement(ea, view, element, text) {
+  if (!setExcalidrawAutomateView(ea, view)) {
+    return false;
+  }
   const updated = withUpdatedText(element, text);
   if (ea.copyViewElementsToEAforEditing && ea.addElementsToView) {
     try {
       ea.copyViewElementsToEAforEditing([updated]);
-      await Promise.resolve(ea.addElementsToView(false));
-      return true;
+      return await Promise.resolve(ea.addElementsToView(false));
     } catch (error) {
       console.warn("Could not update text through ExcalidrawAutomate.", error);
     }
@@ -965,23 +979,41 @@ async function replaceTextElement(ea, element, text) {
   }
 }
 async function insertNewTextElement(ea, view, text, width) {
-  var _a, _b, _c;
+  var _a, _b, _c, _d, _e;
   if (!ea.addText || !ea.addElementsToView) {
     return false;
   }
   try {
+    if (!setExcalidrawAutomateView(ea, view)) {
+      return false;
+    }
     const api = safeGetExcalidrawApi(ea);
     const appState = (_b = (_a = api == null ? void 0 : api.getAppState) == null ? void 0 : _a.call(api)) != null ? _b : {};
     (_c = ea.reset) == null ? void 0 : _c.call(ea);
     applyCurrentTextStyle(ea, appState);
-    const point = getViewportCenterScenePoint(view, appState);
-    ea.addText(point.x, point.y, text, {
+    const point = (_e = (_d = ea.getViewCenterPosition) == null ? void 0 : _d.call(ea)) != null ? _e : getViewportCenterScenePoint(view, appState);
+    const id = ea.addText(point.x, point.y, text, {
       width
     });
-    await Promise.resolve(ea.addElementsToView(false));
-    return true;
+    if (!id) {
+      return false;
+    }
+    return await Promise.resolve(ea.addElementsToView(false));
   } catch (error) {
     console.warn("Could not insert text through ExcalidrawAutomate.", error);
+    return false;
+  }
+}
+function setExcalidrawAutomateView(ea, view) {
+  var _a, _b;
+  if (!ea.setView) {
+    return true;
+  }
+  try {
+    const target = (_b = (_a = ea.setView(view, false)) != null ? _a : ea.setView("active", false)) != null ? _b : ea.setView("auto", false);
+    return Boolean(target);
+  } catch (error) {
+    console.warn("Could not set ExcalidrawAutomate target view.", error);
     return false;
   }
 }

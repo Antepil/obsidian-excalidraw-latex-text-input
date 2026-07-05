@@ -8,6 +8,7 @@ This plugin is designed for a very specific workflow: you want the fast LaTeX in
 
 - Adds a command: `Insert enhanced text into Excalidraw`
 - Opens a CodeMirror-based text input modal while an Excalidraw drawing is active
+- Targets the active Excalidraw view before committing text through ExcalidrawAutomate
 - Reuses LaTeX Suite editor extensions when LaTeX Suite is installed and enabled
 - Includes a built-in snippet engine based on the LaTeX Suite-style snippet profile in this repository
 - Lets LaTeX Suite snippets trigger inside `$...$` and `$$...$$` math regions

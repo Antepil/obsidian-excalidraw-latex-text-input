@@ -339,6 +339,7 @@ ${indent}$$`;
 var latex_suite_snippets_default = latexSuiteSnippets;
 
 // src/latex-snippet-extension.ts
+var SNIPPET_USER_EVENT = "input.complete";
 function createLatexSnippetExtension(snippets) {
   return [
     import_view.keymap.of([
@@ -355,6 +356,9 @@ function createLatexSnippetExtension(snippets) {
         }
         update(update) {
           if (!update.docChanged || !this.view.hasFocus) {
+            return;
+          }
+          if (update.transactions.some((transaction) => transaction.isUserEvent(SNIPPET_USER_EVENT))) {
             return;
           }
           if (this.timer !== null) {
@@ -391,7 +395,7 @@ function expandBestSnippet(view, snippets, autoOnly) {
       insert: replacement.text
     },
     selection,
-    userEvent: "input.complete"
+    userEvent: SNIPPET_USER_EVENT
   });
   return true;
 }

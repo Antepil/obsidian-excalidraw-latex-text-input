@@ -5,6 +5,8 @@ import { SNIPPET_VARIABLES } from "./latex-suite-snippets";
 
 type MathContext = "text" | "inline" | "display";
 
+const SNIPPET_USER_EVENT = "input.complete";
+
 interface SnippetMatch {
   snippet: LatexSnippet;
   from: number;
@@ -35,6 +37,10 @@ export function createLatexSnippetExtension(snippets: LatexSnippet[]): Extension
 
         update(update: ViewUpdate): void {
           if (!update.docChanged || !this.view.hasFocus) {
+            return;
+          }
+
+          if (update.transactions.some((transaction) => transaction.isUserEvent(SNIPPET_USER_EVENT))) {
             return;
           }
 
@@ -84,7 +90,7 @@ function expandBestSnippet(
       insert: replacement.text
     },
     selection,
-    userEvent: "input.complete"
+    userEvent: SNIPPET_USER_EVENT
   });
 
   return true;

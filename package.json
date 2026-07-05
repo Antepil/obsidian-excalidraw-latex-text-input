@@ -1,7 +1,7 @@
 {
   "name": "obsidian-excalidraw-latex-text-input",
-  "version": "0.1.5",
-  "description": "Enhanced plain-text input for Excalidraw using Obsidian LaTeX Suite snippets.",
+  "version": "0.1.6",
+  "description": "Enhanced Excalidraw text input with Obsidian LaTeX Suite snippets and inline LaTeX conversion.",
   "main": "main.js",
   "repository": {
     "type": "git",

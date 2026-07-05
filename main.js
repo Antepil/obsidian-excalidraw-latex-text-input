@@ -556,7 +556,8 @@ function isEscaped(text, index) {
 // src/main.ts
 var DEFAULT_SETTINGS = {
   defaultTextWidth: 500,
-  replaceSelectedText: true
+  replaceSelectedText: true,
+  renderInlineLatexOnInsert: true
 };
 var DOCUMENT_NODE_ID = 0;
 var OPEN_INLINE_MATH_NODE_ID = 1;
@@ -568,6 +569,11 @@ var CLOSE_MATH_NODE = "formatting_formatting-math_formatting-math-end_keyword_ma
 var OPEN_DISPLAY_MATH_NODE = "formatting_formatting-math_formatting-math-begin_keyword_math_math-block";
 var EXCALIDRAW_PLUGIN_ID = "obsidian-excalidraw-plugin";
 var LATEX_SUITE_PLUGIN_ID = "obsidian-latex-suite";
+var INLINE_FRAGMENT_GAP = 0;
+var INLINE_ANCHOR_PADDING = 4;
+var CONTAINER_PADDING_FALLBACK = 12;
+var DEFAULT_FONT_FAMILY = 5;
+var DEFAULT_LINE_HEIGHT = 1.25;
 var DEFAULT_TEXT_STYLE = {
   strokeColor: "#1e1e1e",
   fontSize: 20,
@@ -606,6 +612,20 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
         }
         if (!checking) {
           this.openInputModal(view);
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "convert-selected-inline-latex",
+      name: "Convert selected text to inline LaTeX",
+      checkCallback: (checking) => {
+        const view = getActiveExcalidrawView(this.app);
+        if (!view) {
+          return false;
+        }
+        if (!checking) {
+          void this.convertSelectedInlineLatex(view);
         }
         return true;
       }
@@ -666,6 +686,34 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
       new import_obsidian.Notice("Nothing to insert.");
       return;
     }
+    if (this.settings.renderInlineLatexOnInsert && hasLatexFragment(parseInlineLatex(normalizedText))) {
+      if (context.selectedTextElement && this.settings.replaceSelectedText) {
+        const didReplace = await replaceTextElementWithInlineLatex(
+          context.ea,
+          context.view,
+          context.selectedTextElement,
+          normalizedText,
+          style
+        );
+        if (didReplace) {
+          new import_obsidian.Notice("Inserted inline LaTeX text.");
+          return;
+        }
+        new import_obsidian.Notice("Could not convert the selected text. Creating new inline LaTeX text instead.");
+      }
+      const didInsertInline = await insertNewInlineLatexElements(
+        context.ea,
+        context.view,
+        normalizedText,
+        style,
+        this.settings.defaultTextWidth
+      );
+      if (didInsertInline) {
+        new import_obsidian.Notice("Inserted inline LaTeX text.");
+        return;
+      }
+      new import_obsidian.Notice("Could not insert inline LaTeX. Creating a normal text element instead.");
+    }
     if (context.selectedTextElement && this.settings.replaceSelectedText) {
       const didReplace = await replaceTextElement(
         context.ea,
@@ -692,6 +740,27 @@ var ExcalidrawLatexTextInputPlugin = class extends import_obsidian.Plugin {
       return;
     }
     new import_obsidian.Notice("Inserted Excalidraw text.");
+  }
+  async convertSelectedInlineLatex(view) {
+    const context = this.getInsertContext(view);
+    if (!context) {
+      return;
+    }
+    const selectedTextElements = getSelectedTextElements(context.ea);
+    if (selectedTextElements.length === 0) {
+      new import_obsidian.Notice("Select one or more Excalidraw text elements first.");
+      return;
+    }
+    const convertedCount = await convertTextElementsToInlineLatex(
+      context.ea,
+      context.view,
+      selectedTextElements
+    );
+    if (convertedCount > 0) {
+      new import_obsidian.Notice(
+        convertedCount === 1 ? "Converted one text element to inline LaTeX." : `Converted ${convertedCount} text elements to inline LaTeX.`
+      );
+    }
   }
 };
 var MixedLatexTextModal = class extends import_obsidian.Modal {
@@ -888,6 +957,12 @@ var ExcalidrawLatexTextSettingTab = class extends import_obsidian.PluginSettingT
     new import_obsidian.Setting(containerEl).setName("Replace selected text").setDesc("When a single Excalidraw text element is selected, edit that element instead of creating a new one.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.replaceSelectedText).onChange(async (value) => {
         this.plugin.settings.replaceSelectedText = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian.Setting(containerEl).setName("Render inline LaTeX on insert").setDesc("When enabled, text inside math delimiters is inserted as Excalidraw LaTeX elements while surrounding text remains normal text.").addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.renderInlineLatexOnInsert).onChange(async (value) => {
+        this.plugin.settings.renderInlineLatexOnInsert = value;
         await this.plugin.saveSettings();
       });
     });
@@ -1124,6 +1199,557 @@ function getStringValue(value) {
 function getNumberValue(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+var shouldJoinWithoutSpace = (before, after) => {
+  const cjkOrFullWidth = /[\u3400-\u9fff\uff00-\uffef，。！？；：、（）【】《》“”‘’]/u;
+  return cjkOrFullWidth.test(before) || cjkOrFullWidth.test(after);
+};
+function normalizeTextFragment(text) {
+  return text.replace(/\\\$/g, "$").replace(/\r\n?/g, "\n").replace(/[ \t]*\n+[ \t]*/g, (match, offset, source) => {
+    var _a, _b;
+    const before = (_a = source[offset - 1]) != null ? _a : "";
+    const after = (_b = source[offset + match.length]) != null ? _b : "";
+    return shouldJoinWithoutSpace(before, after) ? "" : " ";
+  }).replace(/[ \t]{2,}/g, " ");
+}
+function normalizeLatexFragment(latex) {
+  return latex.replace(/\s+/g, " ").trim();
+}
+function parseInlineLatex(text) {
+  const fragments = [];
+  let buffer = "";
+  let index = 0;
+  const pushText = () => {
+    const value = normalizeTextFragment(buffer);
+    if (value) {
+      fragments.push({ type: "text", value });
+    }
+    buffer = "";
+  };
+  while (index < text.length) {
+    if (text[index] !== "$" || isEscaped2(text, index)) {
+      buffer += text[index];
+      index += 1;
+      continue;
+    }
+    const delimiter = text[index + 1] === "$" ? "$$" : "$";
+    const start = index + delimiter.length;
+    let end = -1;
+    for (let cursor = start; cursor < text.length; cursor += 1) {
+      if (text.slice(cursor, cursor + delimiter.length) === delimiter && !isEscaped2(text, cursor)) {
+        end = cursor;
+        break;
+      }
+    }
+    if (end === -1) {
+      buffer += text[index];
+      index += 1;
+      continue;
+    }
+    pushText();
+    const latex = normalizeLatexFragment(text.slice(start, end));
+    if (latex) {
+      fragments.push({ type: "latex", value: latex });
+    }
+    index = end + delimiter.length;
+  }
+  pushText();
+  return fragments;
+}
+function hasLatexFragment(fragments) {
+  return fragments.some((fragment) => fragment.type === "latex");
+}
+async function replaceTextElementWithInlineLatex(ea, view, element, text, style) {
+  const convertedCount = await convertTextElementsToInlineLatex(
+    ea,
+    view,
+    [element],
+    /* @__PURE__ */ new Map([[element.id, { text, style }]])
+  );
+  return convertedCount > 0;
+}
+async function insertNewInlineLatexElements(ea, view, text, style, width) {
+  var _a, _b, _c, _d, _e;
+  if (!ea.addText || !ea.addLaTex || !ea.addElementsToView || !ea.getElement) {
+    return false;
+  }
+  try {
+    if (!setExcalidrawAutomateView(ea, view)) {
+      return false;
+    }
+    const api = safeGetExcalidrawApi(ea);
+    const appState = (_b = (_a = api == null ? void 0 : api.getAppState) == null ? void 0 : _a.call(api)) != null ? _b : {};
+    (_c = ea.reset) == null ? void 0 : _c.call(ea);
+    applyCurrentTextStyle(ea, appState);
+    const renderStyle = getInlineTextStyle(ea, null, style);
+    const point = (_e = (_d = ea.getViewCenterPosition) == null ? void 0 : _d.call(ea)) != null ? _e : getViewportCenterScenePoint(view, appState);
+    const result = await insertInlineLinesInArea(
+      ea,
+      text,
+      {
+        x: point.x,
+        y: point.y,
+        width
+      },
+      renderStyle
+    );
+    if (result.ids.length === 0) {
+      return false;
+    }
+    groupElements(ea, result.ids);
+    const didAdd = await Promise.resolve(ea.addElementsToView(false, false, true));
+    if (didAdd !== false) {
+      selectElements(ea, result.ids);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.warn("Could not insert inline LaTeX through ExcalidrawAutomate.", error);
+    return false;
+  }
+}
+async function convertTextElementsToInlineLatex(ea, view, textElements, overrides = /* @__PURE__ */ new Map()) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  if (!ea.addText || !ea.addLaTex || !ea.addElementsToView || !ea.deleteViewElements || !ea.getElement || !ea.getViewElements) {
+    return 0;
+  }
+  if (!setExcalidrawAutomateView(ea, view)) {
+    return 0;
+  }
+  (_a = ea.reset) == null ? void 0 : _a.call(ea);
+  const convertedIds = [];
+  const originalsToDelete = [];
+  const bindingTargetIdsByOriginalId = /* @__PURE__ */ new Map();
+  const connectedLinesByTextId = getConnectedLinesByElementId(
+    ea,
+    textElements.map((element) => element.id)
+  );
+  let skippedNoLatexCount = 0;
+  let skippedMissingContainerCount = 0;
+  for (const textElement of textElements) {
+    const override = overrides.get(textElement.id);
+    const sourceText = (_c = (_b = override == null ? void 0 : override.text) != null ? _b : textElement.text) != null ? _c : "";
+    const fragments = parseInlineLatex(sourceText);
+    if (!hasLatexFragment(fragments)) {
+      skippedNoLatexCount += 1;
+      continue;
+    }
+    const style = getInlineTextStyle(ea, textElement, override == null ? void 0 : override.style);
+    const draftTextElement = (override == null ? void 0 : override.style) ? withUpdatedTextAndStyle(textElement, sourceText, override.style) : { ...textElement, text: sourceText };
+    const connectedLines = (_d = connectedLinesByTextId.get(textElement.id)) != null ? _d : [];
+    if (draftTextElement.containerId) {
+      const containerElement = getViewElementById(ea, draftTextElement.containerId);
+      if (!containerElement) {
+        skippedMissingContainerCount += 1;
+        continue;
+      }
+      const result2 = await insertInlineLinesInContainer(
+        ea,
+        draftTextElement,
+        containerElement,
+        style
+      );
+      if (result2.ids.length === 0) {
+        continue;
+      }
+      (_e = ea.copyViewElementsToEAforEditing) == null ? void 0 : _e.call(ea, [containerElement]);
+      const editableContainer = ea.getElement(containerElement.id);
+      if (!editableContainer) {
+        skippedMissingContainerCount += 1;
+        continue;
+      }
+      addBoundLinesToElement(editableContainer, connectedLines);
+      const ids2 = [editableContainer.id, ...result2.ids];
+      groupElements(ea, ids2);
+      if (connectedLines.length > 0) {
+        bindingTargetIdsByOriginalId.set(textElement.id, editableContainer.id);
+      }
+      convertedIds.push(...ids2);
+      originalsToDelete.push(textElement);
+      continue;
+    }
+    const result = await insertInlineTextForElement(ea, draftTextElement, style);
+    if (result.ids.length === 0) {
+      continue;
+    }
+    let ids = result.ids;
+    if (connectedLines.length > 0 && result.bounds) {
+      const anchorId = createTransparentAnchor(ea, result.bounds, connectedLines);
+      if (!anchorId) {
+        continue;
+      }
+      bindingTargetIdsByOriginalId.set(textElement.id, anchorId);
+      ids = [anchorId, ...result.ids];
+    }
+    groupElements(ea, ids);
+    convertedIds.push(...ids);
+    originalsToDelete.push(textElement);
+  }
+  if (bindingTargetIdsByOriginalId.size > 0) {
+    const linesToEditById = /* @__PURE__ */ new Map();
+    for (const connectedLines of connectedLinesByTextId.values()) {
+      for (const { line } of connectedLines) {
+        linesToEditById.set(line.id, line);
+      }
+    }
+    (_f = ea.copyViewElementsToEAforEditing) == null ? void 0 : _f.call(ea, [...linesToEditById.values()]);
+    for (const [oldId, targetId] of bindingTargetIdsByOriginalId.entries()) {
+      for (const { line, side } of (_g = connectedLinesByTextId.get(oldId)) != null ? _g : []) {
+        const editableLine = ea.getElement(line.id);
+        if (!editableLine) {
+          continue;
+        }
+        if (side === "start" && ((_h = editableLine.startBinding) == null ? void 0 : _h.elementId) === oldId) {
+          editableLine.startBinding.elementId = targetId;
+        }
+        if (side === "end" && ((_i = editableLine.endBinding) == null ? void 0 : _i.elementId) === oldId) {
+          editableLine.endBinding.elementId = targetId;
+        }
+      }
+    }
+  }
+  if (originalsToDelete.length === 0) {
+    showInlineConversionSkipNotices(skippedNoLatexCount, skippedMissingContainerCount);
+    return 0;
+  }
+  ea.deleteViewElements(originalsToDelete);
+  const didAdd = await Promise.resolve(ea.addElementsToView(false, false, true));
+  if (didAdd === false) {
+    return 0;
+  }
+  selectElements(ea, convertedIds);
+  showInlineConversionSkipNotices(skippedNoLatexCount, skippedMissingContainerCount);
+  return originalsToDelete.length;
+}
+function showInlineConversionSkipNotices(skippedNoLatexCount, skippedMissingContainerCount) {
+  if (skippedNoLatexCount > 0) {
+    new import_obsidian.Notice(
+      skippedNoLatexCount === 1 ? "Selected text contains no inline LaTeX." : `${skippedNoLatexCount} selected text elements contain no inline LaTeX.`
+    );
+  }
+  if (skippedMissingContainerCount > 0) {
+    new import_obsidian.Notice(
+      skippedMissingContainerCount === 1 ? "Skipped one text element because its container was not found." : `Skipped ${skippedMissingContainerCount} text elements because their containers were not found.`
+    );
+  }
+}
+async function insertInlineTextForElement(ea, textElement, style) {
+  var _a;
+  return insertInlineLinesInArea(
+    ea,
+    (_a = textElement.text) != null ? _a : "",
+    {
+      x: toNumber(textElement.x, 0),
+      y: toNumber(textElement.y, 0),
+      width: Math.max(style.fontSize, toNumber(textElement.width, style.fontSize))
+    },
+    style
+  );
+}
+async function insertInlineLinesInContainer(ea, textElement, containerElement, style) {
+  var _a, _b;
+  const lines = splitTextLines((_a = textElement.text) != null ? _a : "");
+  const area = getContainerTextArea(textElement, containerElement, style);
+  const startY = getContainerContentTopY(area, lines.length, style);
+  return insertInlineLinesInArea(
+    ea,
+    (_b = textElement.text) != null ? _b : "",
+    {
+      ...area,
+      y: startY
+    },
+    style
+  );
+}
+async function insertInlineLinesInArea(ea, text, area, style) {
+  const lines = splitTextLines(text);
+  const lineHeight = getLineHeight(style);
+  const ids = [];
+  let bounds = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const fragments = parseInlineLatex(lines[index]);
+    if (fragments.length === 0) {
+      continue;
+    }
+    const lineResult = await insertInlineFragments(
+      ea,
+      fragments,
+      {
+        x: area.x,
+        y: area.y + index * lineHeight,
+        centerY: area.y + index * lineHeight + lineHeight / 2,
+        align: "left"
+      },
+      style
+    );
+    if (lineResult.ids.length === 0 || !lineResult.bounds) {
+      continue;
+    }
+    const lineX = getAlignedLineX(area, lineResult.bounds.width, style.textAlign);
+    const dx = lineX - lineResult.bounds.x;
+    if (dx !== 0) {
+      moveElementsBy(ea, lineResult.ids, dx, 0);
+      lineResult.bounds.x += dx;
+    }
+    ids.push(...lineResult.ids);
+    bounds = mergeBounds(bounds, lineResult.bounds);
+  }
+  return { ids, bounds };
+}
+async function insertInlineFragments(ea, fragments, anchor, style) {
+  var _a;
+  if (!ea.addText || !ea.addLaTex || !ea.getElement) {
+    return { ids: [], bounds: null };
+  }
+  applyInlineTextStyle(ea, style);
+  const latexScale = Math.max(0.6, style.fontSize / 20);
+  const ids = [];
+  for (const fragment of fragments) {
+    if (fragment.type === "latex") {
+      const id2 = await Promise.resolve(ea.addLaTex(0, 0, fragment.value, latexScale, latexScale));
+      if (id2) {
+        ids.push(id2);
+      }
+      continue;
+    }
+    const id = ea.addText(0, 0, fragment.value);
+    if (id) {
+      ids.push(id);
+    }
+  }
+  const elements = ids.map((id) => {
+    var _a2;
+    return (_a2 = ea.getElement) == null ? void 0 : _a2.call(ea, id);
+  }).filter(isExcalidrawElement);
+  if (elements.length === 0) {
+    return { ids: [], bounds: null };
+  }
+  const totalWidth = elements.reduce((sum, element) => sum + toNumber(element.width, 0), 0) + INLINE_FRAGMENT_GAP * Math.max(0, elements.length - 1);
+  const maxHeight = Math.max(...elements.map((element) => toNumber(element.height, style.fontSize)));
+  const startX = anchor.align === "center" ? anchor.x - totalWidth / 2 : anchor.align === "right" ? anchor.x - totalWidth : anchor.x;
+  const centerY = (_a = anchor.centerY) != null ? _a : anchor.y + maxHeight / 2;
+  const topY = centerY - maxHeight / 2;
+  let cursorX = startX;
+  for (const element of elements) {
+    element.x = cursorX;
+    element.y = topY + (maxHeight - toNumber(element.height, style.fontSize)) / 2;
+    cursorX += toNumber(element.width, 0) + INLINE_FRAGMENT_GAP;
+  }
+  return { ids, bounds: getBoundingBoxByIds(ea, ids) };
+}
+function splitTextLines(text) {
+  return text.replace(/\r\n?/g, "\n").split("\n");
+}
+function getInlineTextStyle(ea, element, override) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z;
+  const appState = (_c = (_b = (_a = safeGetExcalidrawApi(ea)) == null ? void 0 : _a.getAppState) == null ? void 0 : _b.call(_a)) != null ? _c : {};
+  return {
+    strokeColor: (_h = (_g = (_e = (_d = override == null ? void 0 : override.strokeColor) != null ? _d : getStringValue(element == null ? void 0 : element.strokeColor)) != null ? _e : getStringValue(appState.currentItemStrokeColor)) != null ? _g : getStringValue((_f = ea.style) == null ? void 0 : _f.strokeColor)) != null ? _h : DEFAULT_TEXT_STYLE.strokeColor,
+    fontFamily: (_l = (_k = (_i = getNumberValue(element == null ? void 0 : element.fontFamily)) != null ? _i : getNumberValue(appState.currentItemFontFamily)) != null ? _k : getNumberValue((_j = ea.style) == null ? void 0 : _j.fontFamily)) != null ? _l : DEFAULT_FONT_FAMILY,
+    fontSize: (_q = (_p = (_n = (_m = override == null ? void 0 : override.fontSize) != null ? _m : getNumberValue(element == null ? void 0 : element.fontSize)) != null ? _n : getNumberValue(appState.currentItemFontSize)) != null ? _p : getNumberValue((_o = ea.style) == null ? void 0 : _o.fontSize)) != null ? _q : DEFAULT_TEXT_STYLE.fontSize,
+    textAlign: (_v = (_u = (_s = (_r = override == null ? void 0 : override.textAlign) != null ? _r : getTextAlign(element == null ? void 0 : element.textAlign)) != null ? _s : getTextAlign(appState.currentItemTextAlign)) != null ? _u : getTextAlign((_t = ea.style) == null ? void 0 : _t.textAlign)) != null ? _v : DEFAULT_TEXT_STYLE.textAlign,
+    verticalAlign: (_x = (_w = getStringValue(element == null ? void 0 : element.verticalAlign)) != null ? _w : getStringValue(appState.currentItemVerticalAlign)) != null ? _x : "top",
+    lineHeight: (_z = (_y = getNumberValue(element == null ? void 0 : element.lineHeight)) != null ? _y : getNumberValue(appState.currentItemLineHeight)) != null ? _z : DEFAULT_LINE_HEIGHT
+  };
+}
+function applyInlineTextStyle(ea, style) {
+  if (!ea.style) {
+    return;
+  }
+  ea.style.strokeColor = style.strokeColor;
+  ea.style.fontFamily = style.fontFamily;
+  ea.style.fontSize = style.fontSize;
+  ea.style.textAlign = style.textAlign;
+}
+function getLineHeight(style) {
+  return style.fontSize * (style.lineHeight > 0 ? style.lineHeight : DEFAULT_LINE_HEIGHT);
+}
+function getAlignedLineX(area, lineWidth, textAlign) {
+  if (textAlign === "center") {
+    return area.x + (area.width - lineWidth) / 2;
+  }
+  if (textAlign === "right") {
+    return area.x + area.width - lineWidth;
+  }
+  return area.x;
+}
+function getContainerTextArea(textElement, containerElement, style) {
+  const paddingX = Math.max(CONTAINER_PADDING_FALLBACK, style.fontSize * 0.5);
+  const paddingY = Math.max(CONTAINER_PADDING_FALLBACK, style.fontSize * 0.35);
+  const fallback = {
+    x: toNumber(containerElement.x, 0) + paddingX,
+    y: toNumber(containerElement.y, 0) + paddingY,
+    width: Math.max(style.fontSize, toNumber(containerElement.width, style.fontSize) - 2 * paddingX),
+    height: Math.max(style.fontSize, toNumber(containerElement.height, style.fontSize) - 2 * paddingY)
+  };
+  return {
+    x: Number.isFinite(textElement.x) ? toNumber(textElement.x, fallback.x) : fallback.x,
+    y: Number.isFinite(textElement.y) ? toNumber(textElement.y, fallback.y) : fallback.y,
+    width: Number.isFinite(textElement.width) && toNumber(textElement.width, 0) > 0 ? toNumber(textElement.width, fallback.width) : fallback.width,
+    height: Number.isFinite(textElement.height) && toNumber(textElement.height, 0) > 0 ? toNumber(textElement.height, fallback.height) : fallback.height
+  };
+}
+function getContainerContentTopY(area, lineCount, style) {
+  const lineHeight = getLineHeight(style);
+  const contentHeight = Math.max(lineHeight, lineCount * lineHeight);
+  if (style.verticalAlign === "middle" && area.height > contentHeight) {
+    return area.y + (area.height - contentHeight) / 2;
+  }
+  if (style.verticalAlign === "bottom" && area.height > contentHeight) {
+    return area.y + area.height - contentHeight;
+  }
+  return area.y;
+}
+function getBoundingBoxByIds(ea, ids) {
+  const elements = ids.map((id) => {
+    var _a;
+    return (_a = ea.getElement) == null ? void 0 : _a.call(ea, id);
+  }).filter(isExcalidrawElement);
+  if (elements.length === 0) {
+    return null;
+  }
+  const minX = Math.min(...elements.map((element) => toNumber(element.x, 0)));
+  const minY = Math.min(...elements.map((element) => toNumber(element.y, 0)));
+  const maxX = Math.max(...elements.map((element) => toNumber(element.x, 0) + toNumber(element.width, 0)));
+  const maxY = Math.max(...elements.map((element) => toNumber(element.y, 0) + toNumber(element.height, 0)));
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+}
+function mergeBounds(first, second) {
+  if (!first) {
+    return second;
+  }
+  if (!second) {
+    return first;
+  }
+  const minX = Math.min(first.x, second.x);
+  const minY = Math.min(first.y, second.y);
+  const maxX = Math.max(first.x + first.width, second.x + second.width);
+  const maxY = Math.max(first.y + first.height, second.y + second.height);
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+}
+function moveElementsBy(ea, ids, dx, dy) {
+  var _a;
+  for (const id of ids) {
+    const element = (_a = ea.getElement) == null ? void 0 : _a.call(ea, id);
+    if (!element) {
+      continue;
+    }
+    element.x = toNumber(element.x, 0) + dx;
+    element.y = toNumber(element.y, 0) + dy;
+  }
+}
+function getViewElementById(ea, id) {
+  var _a, _b;
+  return (_b = (_a = ea.getViewElements) == null ? void 0 : _a.call(ea).find((element) => element.id === id && !element.isDeleted)) != null ? _b : null;
+}
+function getConnectedLinesByElementId(ea, elementIds) {
+  var _a, _b, _c, _d, _e, _f;
+  const selectedIds = new Set(elementIds);
+  const connected = /* @__PURE__ */ new Map();
+  for (const element of (_b = (_a = ea.getViewElements) == null ? void 0 : _a.call(ea)) != null ? _b : []) {
+    if (element.type !== "arrow" && element.type !== "line") {
+      continue;
+    }
+    const startId = (_c = element.startBinding) == null ? void 0 : _c.elementId;
+    const endId = (_d = element.endBinding) == null ? void 0 : _d.elementId;
+    if (startId && selectedIds.has(startId)) {
+      if (!connected.has(startId)) {
+        connected.set(startId, []);
+      }
+      (_e = connected.get(startId)) == null ? void 0 : _e.push({ line: element, side: "start" });
+    }
+    if (endId && selectedIds.has(endId)) {
+      if (!connected.has(endId)) {
+        connected.set(endId, []);
+      }
+      (_f = connected.get(endId)) == null ? void 0 : _f.push({ line: element, side: "end" });
+    }
+  }
+  return connected;
+}
+function createTransparentAnchor(ea, bounds, connectedLines) {
+  if (!ea.addRect || !ea.getElement) {
+    return null;
+  }
+  if (ea.style) {
+    ea.style.strokeColor = "transparent";
+    ea.style.backgroundColor = "transparent";
+    ea.style.fillStyle = "solid";
+  }
+  const anchorId = ea.addRect(
+    bounds.x - INLINE_ANCHOR_PADDING,
+    bounds.y - INLINE_ANCHOR_PADDING,
+    bounds.width + 2 * INLINE_ANCHOR_PADDING,
+    bounds.height + 2 * INLINE_ANCHOR_PADDING
+  );
+  const anchor = anchorId ? ea.getElement(anchorId) : null;
+  if (!anchor) {
+    return null;
+  }
+  anchor.strokeColor = "transparent";
+  anchor.backgroundColor = "transparent";
+  anchor.fillStyle = "solid";
+  anchor.strokeWidth = 1;
+  anchor.roughness = 0;
+  anchor.opacity = 100;
+  anchor.boundElements = connectedLines.map(({ line }) => ({ type: "arrow", id: line.id }));
+  return anchorId;
+}
+function addBoundLinesToElement(element, connectedLines) {
+  const boundElements = Array.isArray(element.boundElements) ? element.boundElements.filter((boundElement) => boundElement.type !== "text") : [];
+  const seen = new Set(boundElements.map((boundElement) => `${boundElement.type}:${boundElement.id}`));
+  for (const { line } of connectedLines) {
+    const key = `arrow:${line.id}`;
+    if (!seen.has(key)) {
+      boundElements.push({ type: "arrow", id: line.id });
+      seen.add(key);
+    }
+  }
+  element.boundElements = boundElements.length > 0 ? boundElements : null;
+}
+function getSelectedTextElements(ea) {
+  var _a, _b, _c;
+  const textElementsById = /* @__PURE__ */ new Map();
+  const addTextElement = (element) => {
+    if ((element == null ? void 0 : element.type) === "text" && !element.isDeleted) {
+      textElementsById.set(element.id, element);
+    }
+  };
+  try {
+    for (const element of (_b = (_a = ea.getViewSelectedElements) == null ? void 0 : _a.call(ea)) != null ? _b : []) {
+      addTextElement(element);
+      for (const boundElement of (_c = element.boundElements) != null ? _c : []) {
+        if (boundElement.type === "text") {
+          addTextElement(getViewElementById(ea, boundElement.id));
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Could not read selected Excalidraw text elements.", error);
+  }
+  return [...textElementsById.values()];
+}
+function groupElements(ea, ids) {
+  var _a;
+  if (ids.length > 1) {
+    (_a = ea.addToGroup) == null ? void 0 : _a.call(ea, ids);
+  }
+}
+function selectElements(ea, ids) {
+  var _a;
+  if (ids.length > 0) {
+    (_a = ea.selectElementsInView) == null ? void 0 : _a.call(ea, ids);
+  }
+}
 async function replaceTextElement(ea, view, element, text, style) {
   if (!setExcalidrawAutomateView(ea, view)) {
     return false;
@@ -1271,6 +1897,9 @@ function toNumber(value, fallback) {
 }
 function isObject(value) {
   return typeof value === "object" && value !== null;
+}
+function isExcalidrawElement(value) {
+  return isObject(value) && typeof value.id === "string" && typeof value.type === "string";
 }
 function isHTMLElementLike(value) {
   return value instanceof HTMLElement || isObject(value) && typeof value.querySelector === "function" && typeof value.getBoundingClientRect === "function";

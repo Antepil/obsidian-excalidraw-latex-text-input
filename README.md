@@ -1,12 +1,13 @@
 # Excalidraw LaTeX Text Input
 
-An Obsidian companion plugin for writing mixed natural-language and LaTeX-flavored text into Excalidraw as normal text elements.
+An Obsidian companion plugin for writing mixed natural-language and LaTeX-flavored text into Excalidraw with fast LaTeX Suite-style input.
 
-This plugin is designed for a very specific workflow: you want the fast LaTeX input experience from [LaTeX Suite](https://github.com/artisticat1/obsidian-latex-suite), but you do **not** want Excalidraw to render the formula at insertion time. The final result stays editable as plain Excalidraw text.
+This plugin is designed for a very specific workflow: you want the fast LaTeX input experience from [LaTeX Suite](https://github.com/artisticat1/obsidian-latex-suite), and then want the inserted result to become ordinary Excalidraw text for prose plus Excalidraw LaTeX elements for inline math.
 
 ## What It Does
 
 - Adds a command: `Insert enhanced text into Excalidraw`
+- Adds a command: `Convert selected text to inline LaTeX`
 - Opens a CodeMirror-based text input modal while an Excalidraw drawing is active
 - Targets the active Excalidraw view before committing text through ExcalidrawAutomate
 - Starts with a compact one-line editor that grows as you add lines
@@ -14,10 +15,11 @@ This plugin is designed for a very specific workflow: you want the fast LaTeX in
 - Reuses LaTeX Suite editor extensions when LaTeX Suite is installed and enabled
 - Includes a built-in snippet engine based on the LaTeX Suite-style snippet profile in this repository
 - Lets LaTeX Suite snippets trigger inside `$...$` and `$$...$$` math regions
-- Inserts the final content into Excalidraw as a normal text element
-- Updates a selected Excalidraw text element when exactly one text element is selected
+- Inserts surrounding prose as normal Excalidraw text and math regions as Excalidraw LaTeX elements
+- Updates or converts selected Excalidraw text elements, including text bound to containers
+- Preserves arrow/line bindings by using a transparent anchor when converted text needs one
 
-It does not call Excalidraw's built-in LaTeX renderer.
+If `Render inline LaTeX on insert` is disabled, the Insert command falls back to creating one normal text element and you can convert selected text manually later.
 
 ## Requirements
 
@@ -57,7 +59,9 @@ The release tag, release title, and `manifest.json` version are kept in sync.
 
 Use `Shift + Enter` to add a new line in the input box. The editor grows by one line as you add line breaks.
 
-If a single Excalidraw text element is selected, the modal pre-fills its text and updates that element on submit. Otherwise, the command creates a new text element near the current Excalidraw viewport center.
+By default, the command immediately converts math regions into Excalidraw LaTeX elements while keeping surrounding prose as normal text elements. If a single Excalidraw text element is selected, the modal pre-fills its text and replaces that element on submit. Otherwise, the command creates the mixed inline elements near the current Excalidraw viewport center.
+
+To convert text that is already on the canvas, select the text element and run `Excalidraw LaTeX Text Input: Convert selected text to inline LaTeX`.
 
 ## Snippet Input
 
@@ -68,12 +72,13 @@ The modal has its own LaTeX Suite-style snippet engine, so the core shortcuts wo
 - Manual snippets: type triggers like `\sum` or `\int`, then press `Tab` to expand templates with placeholders.
 - Snippet-generated text will not recursively trigger another automatic snippet expansion.
 
-Visual-selection snippets from LaTeX Suite are treated as normal insertions in this modal because this command creates plain Excalidraw text rather than editing an Obsidian Markdown selection.
+Visual-selection snippets from LaTeX Suite are treated as normal insertions in this modal because this command edits a temporary CodeMirror input rather than an Obsidian Markdown selection.
 
 ## Settings
 
 - `Default text width`: width used when creating a new Excalidraw text element.
 - `Replace selected text`: when enabled, a single selected Excalidraw text element is edited instead of creating a new element.
+- `Render inline LaTeX on insert`: when enabled, Insert automatically converts math regions into Excalidraw LaTeX elements.
 
 ## Development
 

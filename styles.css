@@ -1,0 +1,45 @@
+.excalidraw-latex-text-modal {
+  width: min(760px, 92vw);
+}
+
+.excalidraw-latex-text-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.excalidraw-latex-text-editor {
+  min-height: 260px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.excalidraw-latex-text-editor .cm-editor {
+  min-height: 260px;
+  height: 100%;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.excalidraw-latex-text-editor .cm-content {
+  padding: 12px;
+  font-family: var(--font-text);
+  font-size: var(--font-ui-medium);
+  line-height: 1.45;
+}
+
+.excalidraw-latex-text-editor .cm-focused {
+  outline: none;
+}
+
+.excalidraw-latex-text-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.excalidraw-latex-text-footer button {
+  min-width: 84px;
+}

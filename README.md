@@ -59,7 +59,7 @@ If a single Excalidraw text element is selected, the modal pre-fills its text an
 The modal has its own LaTeX Suite-style snippet engine, so the core shortcuts work even when LaTeX Suite's editor extension cannot fully attach to this custom input box.
 
 - Text mode shortcuts: type `mk` for inline math or `dm` for display math.
-- Math mode shortcuts: type triggers such as `@a`, `sr`, `sq`, `//`, `sum`, `lim`, `->`, `RR`, `NN`, `pmat`, and many others from the bundled snippet profile.
+- Math mode shortcuts: type triggers such as `@a`, `sr`, `sq`, `1/`, `//`, `sum`, `lim`, `->`, `RR`, `NN`, `pmat`, and many others from the bundled snippet profile.
 - Manual snippets: type triggers like `\sum` or `\int`, then press `Tab` to expand templates with placeholders.
 
 Visual-selection snippets from LaTeX Suite are treated as normal insertions in this modal because this command creates plain Excalidraw text rather than editing an Obsidian Markdown selection.

@@ -141,6 +141,13 @@ var latexSuiteSnippets = [
   { trigger: "_", replacement: "_{$0}$1", options: "mA" },
   { trigger: "sts", replacement: "_\\text{$0}", options: "mA" },
   { trigger: "sq", replacement: "\\sqrt{ $0 }$1", options: "mA" },
+  {
+    trigger: /((?:\\[A-Za-z]+|[A-Za-z]+|\d+(?:\.\d+)?|\([^()]*\)|\{[^{}]*\}|\[[^\[\]]*])(?:_(?:\{[^{}]*\}|[A-Za-z0-9]+)|\^(?:\{[^{}]*\}|[A-Za-z0-9]+))*)\//,
+    replacement: "\\frac{[[0]]}{$0}",
+    options: "mA",
+    priority: 2,
+    description: "Turn a preceding atom followed by / into a fraction"
+  },
   { trigger: "//", replacement: "\\frac{$0}{$1}$2", options: "mA" },
   { trigger: "ee", replacement: "e^{ $0 }$1", options: "mA" },
   { trigger: "invs", replacement: "^{-1}", options: "mA" },

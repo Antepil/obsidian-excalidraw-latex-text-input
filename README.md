@@ -25,6 +25,14 @@ The plugin still opens a plain text input modal when LaTeX Suite is unavailable,
 
 ## BRAT Installation
 
+BRAT installs plugins from GitHub releases. This repository publishes release assets that BRAT can download directly:
+
+- `manifest.json`
+- `main.js`
+- `styles.css`
+
+The release tag, release title, and `manifest.json` version are kept in sync.
+
 1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat).
 2. Open BRAT settings.
 3. Choose `Add Beta plugin`.
@@ -58,12 +66,19 @@ npm run typecheck
 npm run build
 ```
 
-The plugin entry files required by Obsidian and BRAT are kept at the repository root:
+The plugin entry files required by Obsidian and BRAT are kept at the repository root and attached to each GitHub release:
 
 - `manifest.json`
 - `main.js`
 - `styles.css`
-- `versions.json`
+
+Release checklist:
+
+1. Update `manifest.json` and `versions.json`.
+2. Run `npm run build`.
+3. Commit and push.
+4. Create a GitHub release whose tag and title exactly match the version in `manifest.json`.
+5. Attach `manifest.json`, `main.js`, and `styles.css` as release assets.
 
 ## Notes
 
